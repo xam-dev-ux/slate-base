@@ -1,0 +1,34 @@
+# Foundry
+out/
+cache/
+broadcast/*/31337/
+broadcast/*/84532/dry-run/
+broadcast/*/8453/dry-run/
+
+# Dependencies
+# Root-anchored: this is Foundry's dependency directory. Without the leading slash it would also
+# swallow frontend/src/lib, which is application source.
+/lib/
+node_modules/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Keys / keystores — never committed
+*.keystore
+keystores/
+
+# Frontend
+frontend/.next/
+frontend/out/
+frontend/.vercel/
+
+# Editor / OS
+.DS_Store
+.vscode/
+*.swp
+
+# Playwright MCP artifacts
+.playwright-mcp/

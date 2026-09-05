@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+/* Slate commits to a single dark treatment rather than tracking the OS theme, so the palette is
+   defined once here. Note that plain (un-layered) rules like `body` outrank Tailwind's layered
+   utilities — hence the background lives on the token below, not in a competing body rule. */
+:root {
+  --background: #0a0a0a;
+  --foreground: #e5e5e5;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+/* Tabular figures keep NAV and weight columns from jittering as values update. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
