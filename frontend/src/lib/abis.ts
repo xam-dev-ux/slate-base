@@ -464,6 +464,19 @@ export const slateFundAbi = [
   },
   {
     "type": "function",
+    "name": "redeemInKindSkippingBlocked",
+    "inputs": [
+      {
+        "name": "shareAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "scaledHoldings",
     "inputs": [],
     "outputs": [
@@ -755,6 +768,31 @@ export const slateFundAbi = [
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RedeemedInKindPartial",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "sharesIn",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "blocked",
+        "type": "address[]",
+        "indexed": false,
+        "internalType": "address[]"
       }
     ],
     "anonymous": false

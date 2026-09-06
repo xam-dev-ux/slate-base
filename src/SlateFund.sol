@@ -87,6 +87,8 @@ contract SlateFund {
     event Deposited(address indexed user, uint256 usdcIn, uint256 sharesOut, uint256 navPerShare);
     event Redeemed(address indexed user, uint256 sharesIn, uint256 usdcOut, uint256 navPerShare);
     event RedeemedInKind(address indexed user, uint256 sharesIn);
+    /// @dev `blocked` lists components the holder could not receive and therefore gave up.
+    event RedeemedInKindPartial(address indexed user, uint256 sharesIn, address[] blocked);
     event Rebalanced(
         uint256 indexed rebalanceId,
         address indexed caller,
@@ -294,6 +296,51 @@ contract SlateFund {
             if (claim > 0) require(token.transfer(msg.sender, claim), "TRANSFER_FAILED");
         }
         emit RedeemedInKind(msg.sender, shareAmount);
+    }
+
+    /// @notice Exit while abandoning any component that cannot currently be moved.
+    ///
+    ///         The components are policy-gated by their issuer, who can pause a token's transfers
+    ///         or blocklist an address at any time. `redeemInKind` hands back every component or
+    ///         none, so a single frozen component would otherwise trap every holder in the fund —
+    ///         which would make the unconditional exit conditional on a third party.
+    ///
+    ///         This path transfers whatever it can and reports the rest. **The abandoned portion is
+    ///         forfeited**: those shares are burned and the untransferable assets stay with the
+    ///         remaining holders. Prefer `redeemInKind`; reach for this only when that one reverts.
+    function redeemInKindSkippingBlocked(uint256 shareAmount) external nonReentrant {
+        uint256 supply = SHARE.totalSupply();
+        if (shareAmount == 0 || supply == 0) revert ZeroShares();
+
+        _releaseDepositAllowance(msg.sender, shareAmount);
+        require(SHARE.transferFrom(msg.sender, address(this), shareAmount), "TRANSFER_FAILED");
+        SHARE.burn(shareAmount);
+
+        uint256 n = components.length;
+        address[] memory blocked = new address[](n);
+        uint256 blockedCount;
+
+        for (uint256 i = 0; i < n; i++) {
+            IB20 token = IB20(components[i].token);
+            uint256 bal = token.balanceOf(address(this));
+            uint256 claim = (bal * shareAmount) / supply;
+            if (claim == 0) continue;
+
+            // A component that reverts, or returns false, is recorded rather than allowed to
+            // unwind the whole exit.
+            try token.transfer(msg.sender, claim) returns (bool ok) {
+                if (!ok) blocked[blockedCount++] = components[i].token;
+            } catch {
+                blocked[blockedCount++] = components[i].token;
+            }
+        }
+
+        address[] memory reported = new address[](blockedCount);
+        for (uint256 i = 0; i < blockedCount; i++) {
+            reported[i] = blocked[i];
+        }
+
+        emit RedeemedInKindPartial(msg.sender, shareAmount, reported);
     }
 
     /*//////////////////////////////////////////////////////////////

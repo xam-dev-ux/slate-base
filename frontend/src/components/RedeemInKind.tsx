@@ -21,6 +21,7 @@ export function RedeemInKindButton({
   const { address: user } = useAccount();
   const [open, setOpen] = useState(false);
   const [hash, setHash] = useState<`0x${string}` | undefined>();
+  const [blockedExit, setBlockedExit] = useState(false);
   const { writeContractAsync, isPending } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
@@ -46,10 +47,28 @@ export function RedeemInKindButton({
   }
 
   async function redeem() {
+    try {
+      const h = await writeContractAsync({
+        address: fund,
+        abi: slateFundAbi,
+        functionName: "redeemInKind",
+        args: [shares],
+      });
+      setHash(h);
+      setBlockedExit(false);
+    } catch (error) {
+      // The all-or-nothing exit fails if any component's transfers are frozen by its issuer.
+      // Surface the fallback rather than leaving the holder stuck at a failed transaction.
+      setBlockedExit(true);
+      throw error;
+    }
+  }
+
+  async function redeemSkippingBlocked() {
     const h = await writeContractAsync({
       address: fund,
       abi: slateFundAbi,
-      functionName: "redeemInKind",
+      functionName: "redeemInKindSkippingBlocked",
       args: [shares],
     });
     setHash(h);
@@ -103,6 +122,26 @@ export function RedeemInKindButton({
           Cancel
         </button>
       </div>
+
+      {blockedExit && !isSuccess && (
+        <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+          <p className="text-xs leading-relaxed text-amber-200">
+            That exit failed, which usually means one component&apos;s transfers are currently
+            frozen by its issuer. You can still leave by abandoning the frozen component —{" "}
+            <span className="font-medium text-amber-100">
+              you forfeit your claim on it, and that is irreversible.
+            </span>
+          </p>
+          <button
+            type="button"
+            onClick={redeemSkippingBlocked}
+            disabled={isPending || isConfirming}
+            className="mt-3 rounded-lg border border-amber-400/40 px-3 py-1.5 text-xs text-amber-100 transition hover:border-amber-300 disabled:opacity-50"
+          >
+            {isPending || isConfirming ? "Confirming…" : "Exit without the frozen component"}
+          </button>
+        </div>
+      )}
 
       {isSuccess && (
         <p className="mt-3 text-xs text-emerald-400">

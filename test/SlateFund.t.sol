@@ -369,6 +369,38 @@ contract SlateFundTest is Test {
         assertApproxEqAbs(fund.depositedBy(alice), (DEPOSIT * 3) / 4, 2, "three quarters still used");
     }
 
+    /// @dev The components are policy-gated by their issuer, who can freeze one at any time. If a
+    ///      single frozen component could block the in-kind exit, every holder would be trapped and
+    ///      the unconditional exit would be conditional on a third party.
+    function test_oneFrozenComponentCannotTrapHolders() public {
+        uint256 shares = _depositBalanced(alice, DEPOSIT);
+        uint256 claimA = tokenA.balanceOf(address(fund)) ;
+
+        // Freeze transfers on component B, exactly as its issuer could.
+        tokenB.grantRole(keccak256("PAUSE_ROLE"), address(this));
+        IB20.PausableFeature[] memory features = new IB20.PausableFeature[](1);
+        features[0] = IB20.PausableFeature.TRANSFER;
+        tokenB.pause(features);
+
+        // The all-or-nothing exit is now impossible — this is the trap being guarded against.
+        vm.startPrank(alice);
+        share.approve(address(fund), shares);
+        vm.expectRevert();
+        fund.redeemInKind(shares);
+        vm.stopPrank();
+
+        // The escape hatch still gets the holder out, with the frozen component reported.
+        vm.startPrank(alice);
+        share.approve(address(fund), shares);
+        fund.redeemInKindSkippingBlocked(shares);
+        vm.stopPrank();
+
+        assertEq(tokenA.balanceOf(alice), claimA, "received everything that could move");
+        assertEq(tokenB.balanceOf(alice), 0, "the frozen component was given up");
+        assertEq(share.balanceOf(alice), 0, "the holder is out");
+        assertEq(share.totalSupply(), 0, "shares burned");
+    }
+
     function test_redeemingEntireSupplyLeavesNoDust() public {
         uint256 aliceShares = _depositBalanced(alice, DEPOSIT);
         uint256 bobShares = _depositBalanced(bob, DEPOSIT);

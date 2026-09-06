@@ -156,7 +156,9 @@ open, because that governs whether the oracles are moving.
 - **Operator powers** — the operator address, the deposit caps, the drift threshold, and the scope
   of what that role can and cannot do, read from the token's own metadata.
 - **Redeem in kind** — always available, including while deposits are paused and every feed is
-  stale.
+  stale. If a component's issuer has frozen its transfers, the all-or-nothing exit would revert, so
+  a second path lets a holder leave by abandoning that component — forfeiting it explicitly rather
+  than being trapped by it.
 - **Corporate actions** — a feed watching every component for multiplier changes, the mechanism by
   which Coinbase reflects real dividends and splits. Scheduled updates are told apart from instant
   overrides by whether the deprecated event co-occurs in the same transaction, not by event name.
@@ -201,6 +203,7 @@ factory, real Aerodrome pools as token sources.
 | A bad swap cannot be forced through | `test_rebalanceRevertsOnSlippageAtomically` and `test_depositRevertsOnBadSwapRate` reject execution outside the oracle-implied bound and leave state untouched |
 | A rebalance must actually rebalance | `test_rebalanceRejectsWrongDirection` rejects buying an already-overweight component even at a fair price |
 | Exit always works | `test_redeemInKindWorksPausedAndFullyStale` redeems with deposits paused and every feed frozen, after asserting that pricing itself reverts |
+| One frozen component cannot trap holders | `test_oneFrozenComponentCannotTrapHolders` pauses a component exactly as its issuer could, shows the all-or-nothing exit now reverts, and gets the holder out through the fallback |
 | Shares can never be frozen | `test_shareTransfersCanNeverBeFrozen` asserts no account holds `PAUSE_ROLE`, that pausing reverts, that policies read `0`, and that a holder can transfer |
 | A depositor cannot spend others' cash | `test_depositCannotOverAllocateOthersCash` rejects swap legs summing beyond the deposit |
 | Nested entry is blocked | `test_reentrancyGuardBlocksNestedEntry` re-enters the fund from inside a swap and confirms the guard held |
@@ -229,6 +232,13 @@ All on Base mainnet (chain 8453). Fill in after deployment.
 **Slate Big Tech 4** — equal weight, 2500 bps each: NVDAc, AAPLc, METAc, GOOGLc.
 
 **Slate AI Core** — NVDAc 4000, GOOGLc 3000, METAc 3000.
+
+Baskets are immutable: there is no function to add, remove or reweight a component after
+deployment. That is the point — an operator who could choose what the fund buys could route it into
+an asset they control, so composition is fixed at creation and the index rule published on the share
+token stays true for the fund's whole life. New compositions mean new funds, which `SlateFactory`
+lets anyone deploy. The tradeoff against a real ETF is deliberate: no index reconstitution, and
+migrating means redeeming and re-depositing.
 
 Composition follows from a liquidity survey run on 2026-09-05: only those four of the 13 deployed
 Coinbase Tokenized Stocks clear a sub-1% price impact at 1000 USDC. COINc, CRCLc and INTCc have no
@@ -302,7 +312,10 @@ pool anywhere on Base.
   unity multiplier rather than implying coverage that does not exist.
 - **Custody depends on a policy someone else controls.** cbXXX transfers are gated by policy ID 5.
   It behaves as a blocklist today, and a fork test proves the fund can hold all four components —
-  but its admin could add addresses later, including this fund.
+  but its admin could add addresses later, including this fund. If that happened to one component,
+  holders could still exit via `redeemInKindSkippingBlocked`, forfeiting their claim on the frozen
+  asset. That is a real loss, and the only outcome the fund can guarantee against a third party
+  freezing an asset it holds.
 - **Fork tests do not execute real swaps.** They cover NAV against live feeds, custody, staleness,
   share creation through the real precompile and in-kind exit. Swap paths, including slippage
   rejection, are covered against a mock router — they have not touched real Aerodrome liquidity.
