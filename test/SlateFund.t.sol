@@ -280,6 +280,34 @@ contract SlateFundTest is Test {
         assertEq(share.totalSupply(), 0, "supply burned down");
     }
 
+    /// @dev Positions are divisible: redeem part of a holding and keep the rest, with the fund and
+    ///      the remaining shares both left proportionally intact.
+    function test_partialRedeemLeavesTheRestOfThePositionIntact() public {
+        uint256 shares = _depositBalanced(alice, DEPOSIT);
+        uint256 half = shares / 2;
+
+        uint256 claimA = tokenA.balanceOf(address(fund)) / 2;
+        uint256 claimB = tokenB.balanceOf(address(fund)) / 2;
+        uint256 outA = _expectedUsdc(claimA, PRICE);
+        uint256 outB = _expectedUsdc(claimB, PRICE);
+        usdc.mint(address(router), outA + outB);
+
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = _swapData(address(tokenA), address(usdc), claimA, outA);
+        calls[1] = _swapData(address(tokenB), address(usdc), claimB, outB);
+
+        uint256 balBefore = usdc.balanceOf(alice);
+        vm.startPrank(alice);
+        share.approve(address(fund), half);
+        fund.redeem(half, calls);
+        vm.stopPrank();
+
+        assertEq(usdc.balanceOf(alice) - balBefore, DEPOSIT / 2, "half the value comes back");
+        assertEq(share.balanceOf(alice), shares - half, "the other half is still held");
+        assertEq(fund.totalNAV(), DEPOSIT / 2, "fund keeps the untouched half");
+        assertEq(fund.navPerShare(), 1e6, "NAV per share unchanged by a partial exit");
+    }
+
     /// @dev The unconditional exit path: no router, no oracle, works while paused and with every
     ///      feed frozen.
     function test_redeemInKindWorksPausedAndFullyStale() public {
