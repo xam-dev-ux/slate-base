@@ -610,6 +610,29 @@ contract SlateFundTest is Test {
         share.mint(address(this), 1e18);
     }
 
+    /// @dev Shares are meant to be ordinary transferable tokens, composable with the rest of DeFi.
+    ///      That only holds if nobody can freeze transfers: `PAUSE_ROLE` is never granted, and the
+    ///      fund exposes no function that could grant it later.
+    function test_shareTransfersCanNeverBeFrozen() public {
+        bytes32 pauseRole = keccak256("PAUSE_ROLE");
+        assertFalse(share.hasRole(pauseRole, address(fund)), "fund holds no pause role");
+        assertFalse(share.hasRole(pauseRole, address(this)), "operator holds no pause role");
+
+        IB20.PausableFeature[] memory features = new IB20.PausableFeature[](1);
+        features[0] = IB20.PausableFeature.TRANSFER;
+        vm.expectRevert();
+        share.pause(features);
+
+        // Transfer policies stay at the always-allow default, so holders can move shares freely.
+        assertEq(share.policyId(keccak256("TRANSFER_SENDER_POLICY")), 0);
+        assertEq(share.policyId(keccak256("TRANSFER_RECEIVER_POLICY")), 0);
+
+        uint256 minted = _depositBalanced(alice, DEPOSIT);
+        vm.prank(alice);
+        share.transfer(bob, minted);
+        assertEq(share.balanceOf(bob), minted, "shares move like any other token");
+    }
+
     function test_nonOperatorCannotTouchParams() public {
         vm.prank(alice);
         vm.expectRevert(SlateFund.NotOperator.selector);

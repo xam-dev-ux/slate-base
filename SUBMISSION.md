@@ -7,24 +7,50 @@ Everything needed for the submission form. **Nothing here has been posted anywhe
 
 **Name:** Slate
 
-**One-line description:** Onchain index funds of Coinbase Tokenized Stocks where every rebalance is
-public, permissionless, and announced onchain in plain English.
+**One-line description:** Index funds of Coinbase Tokenized Stocks on Base — deposit USDC, hold a
+freely transferable B20 share token, and read every rebalance in plain English onchain.
 
 **Longer description:**
 > Slate lets anyone deposit USDC and receive a B20 share token representing a proportional stake in
-> a custodied basket of Coinbase Tokenized Stocks on Base. The fund rebalances permissionlessly —
-> anyone can trigger one when weights drift past the threshold and collect a caller reward, so
-> there is no keeper and no backend holding keys. Every rebalance is bracketed in a B20
-> announcement carrying a human-readable reason, written onchain by the fund itself and readable on
-> BaseScan. The operator can pause deposits and tune bounded parameters and nothing else: there is
-> no withdraw, no sweep, and no admin path to user assets, and in-kind redemption works even when
-> every oracle is frozen.
+> a custodied basket of Coinbase Tokenized Stocks on Base. The share is itself a B20 Asset minted
+> through Base's factory precompile, with its transfer policies deliberately left open, so a
+> position is an ordinary transferable token: tradeable, sendable, and composable with the rest of
+> DeFi rather than locked inside the app that issued it.
+>
+> The fund rebalances permissionlessly — anyone can trigger one when weights drift past the
+> threshold and collect a caller reward, so there is no keeper and no backend holding keys. Every
+> rebalance is bracketed in a B20 announcement carrying a human-readable reason, written onchain by
+> the fund itself and readable on BaseScan. The index rule the fund follows is published as
+> metadata on the share token at creation, so the strategy is onchain too, not just the trades.
+>
+> The operator can pause deposits and tune bounded parameters and nothing else: there is no
+> withdraw, no sweep, and no admin path to user assets. In-kind redemption needs neither router nor
+> oracle and works even when every feed is frozen.
 
 **Live URL:** TODO (Vercel)
 
 **GitHub:** TODO (public repo URL)
 
 **Builder Code:** TODO (register at dashboard.base.org, then set `NEXT_PUBLIC_BUILDER_CODE`)
+
+## What this builds on B20
+
+Slate does not merely hold tokenized stocks — the share token itself is a B20 Asset, and the
+standard's primitives carry the product's core claims.
+
+| B20 surface | How Slate uses it |
+|---|---|
+| Factory precompile `createB20` | The share token is minted as an Asset variant at deployment, from inside the fund's constructor. The fund is its own issuer. |
+| `announce()` | Every rebalance is bracketed in an announcement whose `description` is the plain-English reason, generated onchain from the measured drift. This is the transparency claim, and it is the primitive's intended use. |
+| `extraMetadata` | The index rule, the rebalance policy and the exact scope of operator powers are published on the token at creation, readable by anyone. |
+| Transfer policies | Deliberately left unset, i.e. always-allow. Shares are ordinary transferable tokens. No account holds `PAUSE_ROLE` and the fund exposes no path to grant it, so share transfers can never be frozen — not by the operator, not by anyone. |
+| Roles | `MINT`, `BURN`, `OPERATOR` and `METADATA` are held by the fund contract alone. No human key can mint or burn shares. |
+| `scaledBalanceOf()` | Surfaced in the UI as a "Shares owned" column, so holders see the real share count the multiplier represents — while NAV deliberately ignores it, because the Chainlink feed already prices it in. |
+
+The underlying components are the tokenized stocks themselves, custodied directly: real ownership
+with dividends and voting rights, not synthetic exposure. Their transfer scopes carry a live policy
+(ID 5) which the fork tests prove behaves as a blocklist — that a contract can custody these assets
+at all is verified onchain, not assumed.
 
 ## Contracts
 
