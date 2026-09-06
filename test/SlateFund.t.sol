@@ -149,7 +149,7 @@ contract SlateFundTest is Test {
     }
 
     function test_depositRevertsOverWalletCap() public {
-        uint256 tooMuch = fund.maxDepositPerWallet() + 1;
+        uint256 tooMuch = fund.maxPositionPerWallet() + 1;
         uint256 half = tooMuch / 2;
         uint256[] memory sellAmounts = new uint256[](2);
         sellAmounts[0] = half;
@@ -164,14 +164,14 @@ contract SlateFundTest is Test {
     }
 
     function test_depositRevertsOverFundCap() public {
-        fund.setCaps(1_000e6, 50e6); // operator lowers the total cap below the next deposit
+        // Room for one deposit but not two, with the wallet cap deliberately not the binding one.
+        fund.setCaps(DEPOSIT, 150e6);
+        _depositBalanced(alice, DEPOSIT);
 
         uint256[] memory sellAmounts = new uint256[](2);
-        sellAmounts[0] = 50e6;
-        sellAmounts[1] = 50e6;
         bytes[] memory calls = _emptyCalls();
 
-        vm.startPrank(alice);
+        vm.startPrank(bob);
         usdc.approve(address(fund), DEPOSIT);
         vm.expectRevert(SlateFund.ExceedsFundCap.selector);
         fund.deposit(DEPOSIT, sellAmounts, calls);
@@ -247,7 +247,7 @@ contract SlateFundTest is Test {
 
         vm.startPrank(bob);
         usdc.approve(address(fund), DEPOSIT);
-        vm.expectRevert(SlateFund.ExceedsFundCap.selector);
+        vm.expectRevert(SlateFund.AllocationExceedsDeposit.selector);
         fund.deposit(DEPOSIT, sellAmounts, calls);
         vm.stopPrank();
     }
@@ -401,6 +401,63 @@ contract SlateFundTest is Test {
         assertEq(share.totalSupply(), 0, "shares burned");
     }
 
+    /// @dev The fund's USDC is part of what a share represents, so an in-kind exit that returned
+    ///      only the components would quietly hand the redeemer's cash to whoever stayed. A deposit
+    ///      that allocates nothing to swaps is explicitly allowed, and such a position is all cash.
+    function test_inKindExitReturnsTheCashSliceToo() public {
+        uint256[] memory sellAmounts = new uint256[](2); // allocate nothing: the position is cash
+        bytes[] memory calls = _emptyCalls();
+
+        vm.startPrank(alice);
+        usdc.approve(address(fund), DEPOSIT);
+        fund.deposit(DEPOSIT, sellAmounts, calls);
+        vm.stopPrank();
+
+        uint256 shares = share.balanceOf(alice);
+        uint256 balBefore = usdc.balanceOf(alice);
+
+        vm.startPrank(alice);
+        share.approve(address(fund), shares);
+        fund.redeemInKind(shares);
+        vm.stopPrank();
+
+        assertEq(usdc.balanceOf(alice) - balBefore, DEPOSIT, "the entire position came back");
+        assertEq(fund.totalNAV(), 0, "nothing stranded in the fund");
+    }
+
+    /// @dev Half cash, half components: both halves must come back.
+    function test_inKindExitReturnsCashAndComponentsTogether() public {
+        uint256 perComponent = 40e6; // leaves 20 USDC of the 100 as cash
+        uint256 units = _expectedUnits(perComponent, PRICE);
+        tokenA.mint(address(router), units);
+        tokenB.mint(address(router), units);
+
+        uint256[] memory sellAmounts = new uint256[](2);
+        sellAmounts[0] = perComponent;
+        sellAmounts[1] = perComponent;
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = _swapData(address(usdc), address(tokenA), perComponent, units);
+        calls[1] = _swapData(address(usdc), address(tokenB), perComponent, units);
+
+        vm.startPrank(alice);
+        usdc.approve(address(fund), DEPOSIT);
+        fund.deposit(DEPOSIT, sellAmounts, calls);
+        vm.stopPrank();
+
+        uint256 shares = share.balanceOf(alice);
+        uint256 balBefore = usdc.balanceOf(alice);
+
+        vm.startPrank(alice);
+        share.approve(address(fund), shares);
+        fund.redeemInKind(shares);
+        vm.stopPrank();
+
+        assertEq(usdc.balanceOf(alice) - balBefore, 20e6, "the cash sleeve came back");
+        assertEq(tokenA.balanceOf(alice), units, "and component A");
+        assertEq(tokenB.balanceOf(alice), units, "and component B");
+        assertEq(fund.totalNAV(), 0, "nothing left behind");
+    }
+
     function test_redeemingEntireSupplyLeavesNoDust() public {
         uint256 aliceShares = _depositBalanced(alice, DEPOSIT);
         uint256 bobShares = _depositBalanced(bob, DEPOSIT);
@@ -548,8 +605,14 @@ contract SlateFundTest is Test {
         vm.prank(bob);
         fund.rebalance(amounts, calls);
 
-        // 0.05% of the 100 USDC post-trade NAV.
-        assertEq(usdc.balanceOf(bob) - balBefore, 50_000, "caller reward paid");
+        // 0.25% of the 15 USDC actually traded — not of the 100 USDC fund. Paying a share of total
+        // NAV would reward churning the fund far beyond the work done.
+        uint256 traded = buyEach * 2;
+        assertEq(
+            usdc.balanceOf(bob) - balBefore,
+            (traded * fund.callerRewardBps()) / 10_000,
+            "caller reward is charged on traded value"
+        );
     }
 
     /// @dev Anyone can trigger a warranted rebalance — that is the trust pitch.
@@ -689,13 +752,70 @@ contract SlateFundTest is Test {
         fund.setMaxSlippage(300);
         fund.setCallerReward(25);
         fund.setStalenessTolerance(48 hours);
-        fund.setCaps(1e12, 1e12);
+        fund.setCaps(1_000e6, 100_000e6);
 
         assertEq(tokenA.balanceOf(address(fund)), aBefore, "A untouched");
         assertEq(tokenB.balanceOf(address(fund)), bBefore, "B untouched");
         assertEq(usdc.balanceOf(address(fund)), cashBefore, "cash untouched");
         assertEq(share.totalSupply(), supplyBefore, "no shares minted or burned");
         assertEq(share.balanceOf(address(this)), operatorSharesBefore, "operator gained nothing");
+    }
+
+    /// @dev The previous version of this suite called the operator setters and asserted balances in
+    ///      the same transaction, which never exercised the path that mattered: the operator can
+    ///      also call the permissionless `rebalance`, and used to be paid a share of TOTAL NAV for
+    ///      doing so. Maximising the three relevant knobs turned that into a standing income stream
+    ///      out of the fund. The reward is now charged on traded value, so pushing the parameters to
+    ///      their limits and churning the fund cannot extract more than the trade itself justifies.
+    function test_operatorCannotFarmTheFundThroughRebalances() public {
+        // Deposit leaving a cash sleeve, which by itself produces drift the operator can act on.
+        uint256 perComponent = 40e6;
+        uint256 units = _expectedUnits(perComponent, PRICE);
+        tokenA.mint(address(router), units);
+        tokenB.mint(address(router), units);
+        uint256[] memory sellAmounts = new uint256[](2);
+        sellAmounts[0] = perComponent;
+        sellAmounts[1] = perComponent;
+        bytes[] memory depositCalls = new bytes[](2);
+        depositCalls[0] = _swapData(address(usdc), address(tokenA), perComponent, units);
+        depositCalls[1] = _swapData(address(usdc), address(tokenB), perComponent, units);
+
+        vm.startPrank(alice);
+        usdc.approve(address(fund), DEPOSIT);
+        fund.deposit(DEPOSIT, sellAmounts, depositCalls);
+        vm.stopPrank();
+
+        // Operator maximises every knob that governs how often and how richly it can be paid.
+        fund.setCallerReward(100); // the ceiling
+        fund.setMinRebalanceInterval(1 days); // the floor
+        fund.setDriftThreshold(100); // the floor
+
+        uint256 navBefore = fund.totalNAV();
+        uint256 operatorBefore = usdc.balanceOf(address(this));
+
+        vm.warp(block.timestamp + 2 days);
+        _freshenFeeds();
+
+        // The tightened threshold forces a more complete rebalance, so nearly all the cash goes in.
+        uint256 buyEach = 9.5e6;
+        uint256 unitsEach = _expectedUnits(buyEach, PRICE);
+        tokenA.mint(address(router), unitsEach);
+        tokenB.mint(address(router), unitsEach);
+        int256[] memory amounts = new int256[](2);
+        amounts[0] = int256(buyEach);
+        amounts[1] = int256(buyEach);
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = _swapData(address(usdc), address(tokenA), buyEach, unitsEach);
+        calls[1] = _swapData(address(usdc), address(tokenB), buyEach, unitsEach);
+
+        fund.rebalance(amounts, calls);
+
+        uint256 taken = usdc.balanceOf(address(this)) - operatorBefore;
+        uint256 traded = buyEach * 2;
+
+        // Bounded by the trade, not by the fund: 1% of 15 USDC moved, not of the 100 USDC held.
+        assertEq(taken, (traded * 100) / 10_000, "reward tracks traded value");
+        assertLt(taken, navBefore / 100, "and is a small fraction of the fund, not a slice of it");
     }
 
     function test_operatorCannotMintShares() public {
@@ -728,10 +848,200 @@ contract SlateFundTest is Test {
         assertEq(share.balanceOf(bob), minted, "shares move like any other token");
     }
 
+    /// @dev The factory is permissionless, so a basket can be proposed by anyone. A repeated token
+    ///      would be counted once per entry by every balance loop: NAV would double, and each
+    ///      redemption iteration would re-read an already-reduced balance and pay out again,
+    ///      letting a half-supply holder extract three quarters of it.
+    function test_duplicateComponentIsRejectedAtConstruction() public {
+        SlateFund.ComponentInput[] memory comps = new SlateFund.ComponentInput[](2);
+        comps[0] = SlateFund.ComponentInput({token: address(tokenA), feed: address(feedA), targetWeightBps: 5_000});
+        comps[1] = SlateFund.ComponentInput({token: address(tokenA), feed: address(feedA), targetWeightBps: 5_000});
+
+        vm.expectRevert(abi.encodeWithSelector(SlateFund.DuplicateComponent.selector, address(tokenA)));
+        new SlateFund(
+            bytes32(uint256(77)), "Dup", "DUP", address(usdc), address(router), address(this), comps, "dup"
+        );
+    }
+
+    /// @dev With supply at zero, any value left in the fund belongs to nobody — so the next
+    ///      depositor would acquire all of it for the price of their own deposit.
+    function test_depositRefusedWhileAssetsHaveNoOwner() public {
+        // Strand value: freeze a component, then exit through the path that abandons it.
+        uint256 shares = _depositBalanced(alice, DEPOSIT);
+        tokenB.grantRole(keccak256("PAUSE_ROLE"), address(this));
+        IB20.PausableFeature[] memory features = new IB20.PausableFeature[](1);
+        features[0] = IB20.PausableFeature.TRANSFER;
+        tokenB.pause(features);
+
+        vm.startPrank(alice);
+        share.approve(address(fund), shares);
+        fund.redeemInKindSkippingBlocked(shares);
+        vm.stopPrank();
+
+        assertEq(share.totalSupply(), 0, "supply is gone");
+        assertGt(fund.totalNAV(), 0, "but value remains");
+
+        uint256[] memory sellAmounts = new uint256[](2);
+        bytes[] memory calls = _emptyCalls();
+        vm.startPrank(bob);
+        usdc.approve(address(fund), 1e6);
+        vm.expectRevert(
+            abi.encodeWithSelector(SlateFund.FundHasOrphanedAssets.selector, fund.totalNAV())
+        );
+        fund.deposit(1e6, sellAmounts, calls); // 1 USDC would otherwise buy the whole residue
+        vm.stopPrank();
+    }
+
+    /// @dev Burning a position in exchange for nothing must not be a successful transaction.
+    function test_exitDeliveringNothingReverts() public {
+        uint256 shares = _depositBalanced(alice, DEPOSIT);
+
+        bytes32 pauseRole = keccak256("PAUSE_ROLE");
+        IB20.PausableFeature[] memory features = new IB20.PausableFeature[](1);
+        features[0] = IB20.PausableFeature.TRANSFER;
+        tokenA.grantRole(pauseRole, address(this));
+        tokenB.grantRole(pauseRole, address(this));
+        tokenA.pause(features);
+        tokenB.pause(features);
+
+        vm.startPrank(alice);
+        share.approve(address(fund), shares);
+        vm.expectRevert(SlateFund.NothingDelivered.selector);
+        fund.redeemInKindSkippingBlocked(shares);
+        vm.stopPrank();
+
+        assertEq(share.balanceOf(alice), shares, "the position survives a failed exit");
+    }
+
+    /// @dev The fund cap must track live value, not a running tally. Under the old accounting,
+    ///      sending shares away and redeeming a sliver released the whole recorded deposit, so the
+    ///      cap could be recycled indefinitely from one address while the exposure stayed in place.
+    function test_fundCapHoldsWhenSharesAreShuffled() public {
+        fund.setCaps(DEPOSIT, DEPOSIT); // room for exactly one deposit
+        uint256 shares = _depositBalanced(alice, DEPOSIT);
+
+        // Park the position elsewhere and redeem the smallest possible amount, which is what used
+        // to zero the tally.
+        vm.startPrank(alice);
+        share.transfer(bob, shares - 1);
+        share.approve(address(fund), 1);
+        fund.redeemInKind(1);
+        vm.stopPrank();
+
+        assertEq(fund.depositedBy(alice), 0, "cost basis released, as before");
+        assertApproxEqAbs(fund.totalNAV(), DEPOSIT, 2, "but the exposure never left the fund");
+
+        // So no further deposit fits, from either address — each stopped by the cap that applies
+        // to it. Alice now holds nothing, so her own cap has room and the fund cap is what binds.
+        uint256[] memory sellAmounts = new uint256[](2);
+        bytes[] memory calls = _emptyCalls();
+
+        vm.startPrank(alice);
+        usdc.approve(address(fund), 1e6);
+        vm.expectRevert(SlateFund.ExceedsFundCap.selector);
+        fund.deposit(1e6, sellAmounts, calls);
+        vm.stopPrank();
+
+        // Bob is carrying the whole position, so his per-wallet cap binds first.
+        vm.startPrank(bob);
+        usdc.approve(address(fund), 1e6);
+        vm.expectRevert(SlateFund.ExceedsWalletCap.selector);
+        fund.deposit(1e6, sellAmounts, calls);
+        vm.stopPrank();
+    }
+
+    /// @dev A swap is judged against the oracle, so the reference price must be fresh even though
+    ///      NAV tolerates a weekend-old close. Otherwise a caller trades against a stale mark.
+    function test_swapsRequireAFresherPriceThanNav() public {
+        _depositBalanced(alice, DEPOSIT);
+        vm.warp(block.timestamp + 8 days);
+        _freshenFeeds();
+
+        // Age feed A past the swap window but well inside the NAV tolerance.
+        feedA.setUpdatedAt(block.timestamp - 2 hours);
+        (bool healthy,) = fund.feedsHealthy();
+        assertTrue(healthy, "NAV still prices happily");
+        assertGt(fund.totalNAV(), 0);
+
+        feedA.setAnswer(PRICE * 2);
+        feedA.setUpdatedAt(block.timestamp - 2 hours);
+
+        uint256 sellRawA = 6_250_000;
+        usdc.mint(address(router), 25e6);
+        int256[] memory amounts = new int256[](2);
+        amounts[0] = -int256(sellRawA);
+        bytes[] memory calls = new bytes[](2);
+        calls[0] = _swapData(address(tokenA), address(usdc), sellRawA, 25e6);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                SlateFund.StaleFeed.selector, address(feedA), block.timestamp - 2 hours
+            )
+        );
+        fund.rebalance(amounts, calls);
+    }
+
     function test_nonOperatorCannotTouchParams() public {
         vm.prank(alice);
         vm.expectRevert(SlateFund.NotOperator.selector);
         fund.setDepositsPaused(true);
+    }
+
+    /// @dev The earlier version of this test could not fail: the probe re-entered during the very
+    ///      first deposit, when supply was still zero, so the nested call died on `ZeroShares`
+    ///      whether or not the guard existed. Seeding a position first means the nested call would
+    ///      genuinely succeed if `nonReentrant` were removed.
+    function test_reentrancyGuardIsWhatBlocksNestedEntry() public {
+        MockReentrantRouter evil = new MockReentrantRouter();
+
+        SlateFund.ComponentInput[] memory comps = new SlateFund.ComponentInput[](1);
+        comps[0] = SlateFund.ComponentInput({token: address(tokenA), feed: address(feedA), targetWeightBps: 10_000});
+        SlateFund evilFund = new SlateFund(
+            bytes32(uint256(98)),
+            "Reentrancy Probe Two",
+            "PROBE2",
+            address(usdc),
+            address(evil),
+            address(this),
+            comps,
+            "probe"
+        );
+        IB20Asset evilShare = evilFund.SHARE();
+
+        // A real position exists before the probe fires, so supply > 0 at the moment of re-entry.
+        uint256 units = _expectedUnits(DEPOSIT, PRICE);
+        tokenA.mint(address(evil), units * 2);
+        uint256[] memory sellAmounts = new uint256[](1);
+        sellAmounts[0] = DEPOSIT;
+        bytes[] memory calls = new bytes[](1);
+        calls[0] = _swapData(address(usdc), address(tokenA), DEPOSIT, units);
+
+        evil.arm(address(evilFund), "");
+        vm.startPrank(alice);
+        usdc.approve(address(evilFund), DEPOSIT * 2);
+        evilFund.deposit(DEPOSIT, sellAmounts, calls);
+        vm.stopPrank();
+
+        assertGt(evilShare.totalSupply(), 0, "supply is live, so the nested call could succeed");
+
+        // The re-entrant call arrives as the router, so the router itself must hold shares and have
+        // approved the fund. Otherwise the nested redemption fails for lack of a balance and the
+        // test passes whether or not the guard exists — which is exactly how the previous version
+        // of this test fooled itself.
+        uint256 probeShares = 1e18;
+        vm.prank(alice);
+        evilShare.transfer(address(evil), probeShares);
+        vm.prank(address(evil));
+        evilShare.approve(address(evilFund), type(uint256).max);
+
+        evil.arm(address(evilFund), abi.encodeCall(SlateFund.redeemInKind, (probeShares)));
+
+        vm.prank(alice);
+        evilFund.deposit(DEPOSIT, sellAmounts, calls);
+
+        assertTrue(evil.reentryAttempted(), "the probe fired");
+        assertFalse(evil.reentrySucceeded(), "nonReentrant blocked it");
+        assertEq(evilShare.balanceOf(address(evil)), probeShares, "the nested redemption did nothing");
     }
 
     function test_reentrancyGuardBlocksNestedEntry() public {

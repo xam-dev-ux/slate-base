@@ -191,14 +191,14 @@ node — and with a fund only days old there is nothing yet worth plotting.
 
 ## The claims, and the tests that hold them up
 
-41 tests, all green: 31 unit under `base-forge` with the live precompiles, and 10 fork tests against
+51 tests, all green: 41 unit under `base-forge` with the live precompiles, and 10 fork tests against
 real Base mainnet state pinned to block 50878627 — real tokens, real Chainlink feeds, the real B20
 factory, real Aerodrome pools as token sources.
 
 | Claim | What proves it |
 |---|---|
 | A corporate action is counted once, never twice | `test_navUnchangedByMultiplierAlone` fires a multiplier change with the feed untouched and asserts NAV moves zero. `test_dividendRaisesNavExactlyOnce` moves feed and multiplier together and asserts NAV rises by the feed's move alone |
-| The operator cannot move user funds | `test_operatorFunctionsCannotMoveFunds` exercises every operator power in sequence and asserts balances and supply are untouched. `test_operatorCannotMintShares` shows the role lives with the contract, not a key |
+| The operator cannot move user funds | `test_operatorCannotFarmTheFundThroughRebalances` maximises every parameter the operator controls and then calls the permissionless rebalance itself, asserting what it collects tracks the value traded rather than the size of the fund. `test_operatorFunctionsCannotMoveFunds` and `test_operatorCannotMintShares` cover the rest |
 | Anyone can rebalance | `testFuzz_rebalanceIsPermissionless` fuzzes the caller across arbitrary addresses |
 | A bad swap cannot be forced through | `test_rebalanceRevertsOnSlippageAtomically` and `test_depositRevertsOnBadSwapRate` reject execution outside the oracle-implied bound and leave state untouched |
 | A rebalance must actually rebalance | `test_rebalanceRejectsWrongDirection` rejects buying an already-overweight component even at a fair price |
@@ -206,7 +206,13 @@ factory, real Aerodrome pools as token sources.
 | One frozen component cannot trap holders | `test_oneFrozenComponentCannotTrapHolders` pauses a component exactly as its issuer could, shows the all-or-nothing exit now reverts, and gets the holder out through the fallback |
 | Shares can never be frozen | `test_shareTransfersCanNeverBeFrozen` asserts no account holds `PAUSE_ROLE`, that pausing reverts, that policies read `0`, and that a holder can transfer |
 | A depositor cannot spend others' cash | `test_depositCannotOverAllocateOthersCash` rejects swap legs summing beyond the deposit |
-| Nested entry is blocked | `test_reentrancyGuardBlocksNestedEntry` re-enters the fund from inside a swap and confirms the guard held |
+| Nested entry is blocked | `test_reentrancyGuardIsWhatBlocksNestedEntry` gives the hostile router its own funded, approved position so the nested redemption would genuinely succeed, then confirms only the guard stops it — verified by removing `nonReentrant` and watching the test fail |
+| The in-kind exit returns the cash too | `test_inKindExitReturnsTheCashSliceToo` and `test_inKindExitReturnsCashAndComponentsTogether` |
+| A duplicated component is impossible | `test_duplicateComponentIsRejectedAtConstruction` |
+| Caps bound live exposure, not lifetime flow | `test_fundCapHoldsWhenSharesAreShuffled` and `test_exitingFreesCapacityToDepositAgain` |
+| Orphaned assets cannot be bought cheaply | `test_depositRefusedWhileAssetsHaveNoOwner` |
+| Swaps are judged against a fresh price | `test_swapsRequireAFresherPriceThanNav` |
+| Burning shares for nothing is not a success | `test_exitDeliveringNothingReverts` |
 | No value leaks between holders | `testFuzz_navPerShareStableAcrossDeposits` fuzzes deposit sizes and pins NAV per share |
 | A contract can custody these assets | `test_fork_contractCanCustodyPolicyGatedTokens` moves all four real components into the fund under live policy 5 |
 | NAV matches the real oracles | `test_fork_navMatchesRealFeedPrices` recomputes NAV independently from live feeds |
@@ -321,11 +327,21 @@ pool anywhere on Base.
   rejection, are covered against a mock router — they have not touched real Aerodrome liquidity.
 - **Voting rights are held but not exercisable.** These tokens carry real voting rights; the fund
   custodies them and offers holders no mechanism to direct a vote. Nothing is claimed otherwise.
-- **Cost attribution is exact; the cap accounting is deliberately not.** Rebalance costs are
-  attributed from the stake replayed at that block. Deposit-cap accounting, by contrast, cannot be
-  exact with a freely transferable share — sending shares away keeps the sender's recorded deposit
-  — so it errs toward under-crediting capacity, the safe direction for a limit.
-- **Unaudited.** Caps are deliberately small: 500 USDC per wallet, 25,000 USDC per fund. They bound
-  live exposure rather than lifetime flow, so exiting frees capacity to return.
+- **Cost attribution is exact.** Rebalance costs are attributed from the stake replayed at that
+  block, from the share token's transfer log, rather than from what a viewer holds today.
+- **A frozen component costs the holder that component.** If an issuer freezes one, the
+  all-or-nothing exit reverts and the fallback lets a holder leave by abandoning it. That is a real,
+  irreversible loss, and the best a contract can guarantee when a third party freezes an asset it
+  holds.
+- **Reviewed, not audited.** A structured review of the contracts before deployment found thirteen
+  issues, five of which could have lost user funds — the in-kind exit silently kept the redeemer's
+  cash, a duplicated component would have let a half-supply holder extract three quarters of it,
+  and the caller reward, charged against total NAV, gave the operator a standing claim on the fund
+  through the very rebalance function that is meant to be permissionless. All are fixed, each with
+  a regression test, and two tests that could not fail were rewritten until removing the protection
+  they cover makes them fail. That is a review, not an audit.
+- **Caps are deliberately small**: 500 USDC per wallet, 25,000 USDC per fund. They bound live
+  exposure rather than lifetime flow, so exiting frees capacity to return, and they cannot be
+  removed — only tuned within a hard ceiling.
 - **Not a regulated fund**, and the underlying is Regulation S — not available to US persons. Slate
   cannot geo-gate; Coinbase gates at acquisition.

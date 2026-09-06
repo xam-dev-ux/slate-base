@@ -62,12 +62,12 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
     query: { enabled: Boolean(user) },
   });
 
-  const { data: alreadyDeposited } = useReadContract({
-    address: fund,
-    abi: slateFundAbi,
-    functionName: "depositedBy",
+  const { data: userShares } = useReadContract({
+    address: summary.share,
+    abi: erc20Abi,
+    functionName: "balanceOf",
     args: user ? [user] : undefined,
-    query: { enabled: Boolean(user) && isAddress(raw) },
+    query: { enabled: Boolean(user && summary.share) },
   });
 
   // Split the deposit by target weight — the fund validates each leg against Chainlink regardless.
@@ -85,9 +85,18 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
   const needsApproval =
     allowance === undefined || (allowance as bigint) < usdcAmount;
 
+  // The cap bounds the current value of the position, so the room left is the cap minus what the
+  // stake is worth right now — not minus everything ever deposited.
+  const positionValue =
+    summary.totalNAV !== undefined && share.totalSupply && share.totalSupply > 0n && userShares
+      ? (summary.totalNAV * (userShares as bigint)) / share.totalSupply
+      : 0n;
+
   const walletCapLeft =
-    summary.maxDepositPerWallet !== undefined && alreadyDeposited !== undefined
-      ? summary.maxDepositPerWallet - (alreadyDeposited as bigint)
+    summary.maxPositionPerWallet !== undefined
+      ? summary.maxPositionPerWallet > positionValue
+        ? summary.maxPositionPerWallet - positionValue
+        : 0n
       : undefined;
 
   const overWalletCap =
@@ -197,7 +206,7 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
 
         <div className="mt-2 flex flex-wrap gap-4 text-xs text-neutral-500">
           <span>Balance: {formatUsd(usdcBalance as bigint | undefined)}</span>
-          <span>Wallet cap remaining: {formatUsd(walletCapLeft)}</span>
+          <span>Room left in your cap: {formatUsd(walletCapLeft)}</span>
         </div>
 
         {overWalletCap && (

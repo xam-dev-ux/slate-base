@@ -309,7 +309,20 @@ export const slateFundAbi = [
   },
   {
     "type": "function",
-    "name": "maxDepositPerWallet",
+    "name": "maxFundValue",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "maxPositionPerWallet",
     "inputs": [],
     "outputs": [
       {
@@ -329,19 +342,6 @@ export const slateFundAbi = [
         "name": "",
         "type": "uint16",
         "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "maxTotalDeposits",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -511,7 +511,7 @@ export const slateFundAbi = [
         "internalType": "uint256"
       },
       {
-        "name": "total",
+        "name": "fundValue",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -583,6 +583,32 @@ export const slateFundAbi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setSwapPriceMaxAge",
+    "inputs": [
+      {
+        "name": "s",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "swapPriceMaxAge",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -799,6 +825,11 @@ export const slateFundAbi = [
   },
   {
     "type": "error",
+    "name": "AllocationExceedsDeposit",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "ComponentNotOverweight",
     "inputs": [
       {
@@ -837,6 +868,17 @@ export const slateFundAbi = [
   },
   {
     "type": "error",
+    "name": "DuplicateComponent",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "ExceedsFundCap",
     "inputs": []
   },
@@ -844,6 +886,28 @@ export const slateFundAbi = [
     "type": "error",
     "name": "ExceedsWalletCap",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "FundHasOrphanedAssets",
+    "inputs": [
+      {
+        "name": "strandedValue",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "InsufficientGasForTransfer",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",
@@ -863,6 +927,11 @@ export const slateFundAbi = [
   {
     "type": "error",
     "name": "NotOperator",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NothingDelivered",
     "inputs": []
   },
   {
@@ -958,6 +1027,22 @@ export const slateFundAbi = [
         "name": "componentIndex",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UnsupportedDecimals",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "decimals",
+        "type": "uint8",
+        "internalType": "uint8"
       }
     ]
   },

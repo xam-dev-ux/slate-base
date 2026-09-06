@@ -8,11 +8,12 @@ Working notes for picking this up on a different machine, or after time away. Th
 | Area | State |
 |---|---|
 | Research | Done — see `docs/research-phase0.md`; basket confirmed |
-| `SlateFund` / `SlateFactory` | Written, compiling, 37 tests green |
-| Unit tests | 26 + smoke, including the security and multiplier suites |
+| `SlateFund` / `SlateFactory` | Written, compiling, 51 tests green |
+| Unit tests | 41 + smoke, including the security and multiplier suites |
 | Fork tests | 8 + 2 deploy-rehearsal, pinned to block 50878627 |
+| Pre-deployment review | Done; thirteen findings, all fixed with regression tests |
 | Deploy scripts | Written, factory dry-run simulates clean (~0.000064 ETH) |
-| Frontend | 4 routes + quote proxy, builds and lints clean |
+| Frontend | 5 routes + quote proxy, builds and lints clean |
 | Mainnet deploy | **Not done** — blocked on the deployer keystore |
 | Real deposit / rebalance demo | Not done — needs the deploy first |
 | `SUBMISSION.md` | Written, addresses pending |
@@ -29,6 +30,22 @@ announcement is a pure disclosure emitted in the same transaction.
 component or buy an underweight one, may not overshoot past the target, and the post-trade max drift
 must be within threshold. Slippage checking alone would let a griefer execute fair-priced trades
 that leave the fund worse aligned.
+
+**Caps bound live exposure, never cumulative flow.** A running tally of deposits cannot work with a
+transferable share: it is evadable (move shares away, redeem a sliver, get the allowance back) and
+it ratchets (a recipient redeems and the tally is never released). The cap therefore reads the
+current value of a position and of the fund. `depositedBy` survives only as displayed cost basis and
+gates nothing.
+
+**The caller reward is charged on traded value, not on NAV.** Drift is cheap to manufacture — idle
+cash alone produces it — so a reward proportional to the whole fund is a standing income stream for
+anyone willing to churn it, the operator included, through a function that is deliberately
+permissionless. This was found in review, not in design.
+
+**Swaps are validated against a fresher price than NAV.** NAV may be priced off a weekend-old close
+because the alternative is freezing the fund; accepting that same price as the reference for whether
+a trade was fair lets a caller trade against the stale mark. Hence `swapPriceMaxAge`, an hour by
+default, separate from the 72h NAV tolerance.
 
 **Deposit takes an explicit `sellAmounts` array** alongside the swap calldata. Without it the
 contract cannot know how much USDC each leg consumes, and so cannot compute the oracle-implied
@@ -73,7 +90,9 @@ On Windows the binaries land outside the default PATH; on Linux the installer ha
   swap in a fork test needs either a 0x API key or hand-built Aerodrome Slipstream router calldata.
 - **The multiplier path is mock-only**, because no Coinbase Tokenized Stock has ever rebased. The
   fork test asserts the unity multiplier rather than pretending otherwise.
-- **No audit.** Caps are 500 USDC per wallet and 25,000 per fund for that reason.
+- **Reviewed, not audited.** A pre-deployment review found thirteen issues, five of which could
+  have lost user funds; all are fixed with regression tests. That is not the same as an audit. Caps
+  are 500 USDC per wallet and 25,000 per fund for that reason.
 
 ## Remaining steps
 

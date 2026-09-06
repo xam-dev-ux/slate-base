@@ -60,25 +60,48 @@ contract SlateFund {
     uint16 public driftThresholdBps = 500; // 5 percentage points
     uint32 public minRebalanceInterval = 7 days;
     uint16 public maxSlippageBps = 200; // 2%
-    uint16 public callerRewardBps = 5; // 0.05% of NAV to whoever triggers a rebalance
+    /// @notice Caller reward, charged on the value actually traded — never on total NAV. Rewarding
+    ///         a share of the whole fund would let anyone who can manufacture drift (idle cash is
+    ///         enough) collect a fee far larger than the work performed, including the operator,
+    ///         who can move the parameters that decide when a rebalance is allowed.
+    uint16 public callerRewardBps = 25; // 0.25% of traded value
     // Calibrated from live Chainlink data: the NVDAc feed observed a ~20h gap by Saturday
     // afternoon alone, and 24/5 feeds hold the Friday close across the whole weekend — a
     // Monday pre-market reopen can be 60-70h out. Tolerance sits near the 72h operator ceiling
     // so the fund doesn't freeze every weekend; see docs for the UX tradeoff this implies.
     uint32 public feedStalenessTolerance = 72 hours;
+    /// @notice Separate, much tighter bound for prices used to validate a swap. NAV may be priced
+    ///         off a weekend-old close because the alternative is freezing the fund, but accepting
+    ///         a three-day-old price as the reference for "is this trade fair" would let a caller
+    ///         trade against a stale mark at everyone else's expense.
+    uint32 public swapPriceMaxAge = 1 hours;
 
     uint64 public lastRebalanceAt;
     uint256 public rebalanceCount;
 
-    // Demo safety caps.
-    uint256 public maxDepositPerWallet = 500e6;
-    uint256 public maxTotalDeposits = 25_000e6;
+    /// @notice Caps bound live exposure, measured as the current value of a position and of the
+    ///         fund. Cumulative-deposit accounting cannot work here: shares are transferable, so
+    ///         any per-wallet tally is both evadable (send shares away, redeem, get the allowance
+    ///         back) and ratchetable (a recipient redeems, and the tally is never released).
+    uint256 public maxPositionPerWallet = 500e6;
+    uint256 public maxFundValue = 25_000e6;
+
+    /// @notice Cost basis, for display only. Never used to gate a deposit.
     uint256 public totalDeposited;
     mapping(address => uint256) public depositedBy;
 
     bool public depositsPaused;
 
     uint256 private _reentrancyLock = 1;
+
+    /// @dev Refused rather than attempted below this, so a gas shortfall cannot be mistaken for a
+    ///      component freeze and turned into a permanent forfeiture. A B20 transfer costs well
+    ///      under this even with a policy-registry lookup.
+    uint256 private constant GAS_FLOOR_PER_TRANSFER = 150_000;
+
+    /// @dev Hard ceiling on the operator-settable fund cap. The caps are the compensating control
+    ///      for an unaudited contract; the operator may tune them, not remove them.
+    uint256 private constant MAX_FUND_VALUE_CEILING = 1_000_000e6;
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
@@ -124,6 +147,14 @@ contract SlateFund {
     error DriftNotResolved(uint256 remainingDriftBps);
     error ReentrantCall();
     error OutOfBounds();
+    error DuplicateComponent(address token);
+    error UnsupportedDecimals(address token, uint8 decimals);
+    error AllocationExceedsDeposit();
+    /// @dev Supply is zero while assets remain, so those assets have no owner. Whoever deposited
+    ///      next would take them, so deposits stop instead. Deploy a fresh fund.
+    error FundHasOrphanedAssets(uint256 strandedValue);
+    error NothingDelivered();
+    error InsufficientGasForTransfer(address token);
 
     /*//////////////////////////////////////////////////////////////
                                 MODIFIERS
@@ -162,14 +193,31 @@ contract SlateFund {
         uint16 totalWeight;
         for (uint256 i = 0; i < initialComponents.length; i++) {
             ComponentInput memory ci = initialComponents[i];
+
+            // A repeated token would be counted once per entry by every balance loop, so NAV would
+            // double and each redemption iteration would re-read an already-reduced balance and pay
+            // out again. Anyone can deploy a fund through the factory, so this must be rejected
+            // here rather than assumed away.
+            for (uint256 j = 0; j < i; j++) {
+                if (components[j].token == ci.token) revert DuplicateComponent(ci.token);
+            }
+
+            uint8 tokenDecimals = IB20(ci.token).decimals();
+            uint8 feedDecimals = IAggregatorV3(ci.feed).decimals();
+            // `10 ** (tokenDecimals + feedDecimals)` must stay inside uint256, and a component
+            // whose decimals overflow it would brick every priced path with no way to recover.
+            if (tokenDecimals > 36 || feedDecimals > 36) {
+                revert UnsupportedDecimals(ci.token, tokenDecimals);
+            }
+
             totalWeight += ci.targetWeightBps;
             components.push(
                 Component({
                     token: ci.token,
                     feed: ci.feed,
                     targetWeightBps: ci.targetWeightBps,
-                    tokenDecimals: IB20(ci.token).decimals(),
-                    feedDecimals: IAggregatorV3(ci.feed).decimals()
+                    tokenDecimals: tokenDecimals,
+                    feedDecimals: feedDecimals
                 })
             );
         }
@@ -211,17 +259,27 @@ contract SlateFund {
         if (sellAmounts.length != components.length || swapCalldata.length != components.length) {
             revert LengthMismatch();
         }
-        if (depositedBy[msg.sender] + usdcAmount > maxDepositPerWallet) revert ExceedsWalletCap();
-        if (totalDeposited + usdcAmount > maxTotalDeposits) revert ExceedsFundCap();
 
         uint256 allocated;
         for (uint256 i = 0; i < components.length; i++) {
             allocated += sellAmounts[i];
         }
-        if (allocated > usdcAmount) revert ExceedsFundCap();
+        if (allocated > usdcAmount) revert AllocationExceedsDeposit();
 
         uint256 navBefore = totalNAV();
         uint256 supplyBefore = SHARE.totalSupply();
+
+        // Supply can only reach zero through a full exit, which should leave nothing behind. If
+        // value remains anyway — an abandoned component from `redeemInKindSkippingBlocked` — it
+        // belongs to nobody, and this depositor would silently acquire all of it.
+        if (supplyBefore == 0 && navBefore > 0) revert FundHasOrphanedAssets(navBefore);
+
+        // Caps bound live exposure rather than lifetime flow, so exiting frees room to return and
+        // a fully-redeemed fund is not permanently closed.
+        if (_positionValue(msg.sender, navBefore, supplyBefore) + usdcAmount > maxPositionPerWallet) {
+            revert ExceedsWalletCap();
+        }
+        if (navBefore + usdcAmount > maxFundValue) revert ExceedsFundCap();
 
         require(IB20(USDC).transferFrom(msg.sender, address(this), usdcAmount), "TRANSFER_FAILED");
 
@@ -232,6 +290,10 @@ contract SlateFund {
 
         uint256 navAfter = totalNAV();
         uint256 valueAdded = navAfter - navBefore;
+
+        // `navBefore == 0` with live supply means the fund holds only dust that rounds away; there
+        // is no meaningful ratio to mint against, so deposits wait rather than dividing by zero.
+        if (supplyBefore > 0 && navBefore == 0) revert FundHasOrphanedAssets(0);
 
         uint256 sharesOut =
             supplyBefore == 0 ? valueAdded * 1e12 : (valueAdded * supplyBefore) / navBefore;
@@ -273,9 +335,11 @@ contract SlateFund {
 
         require(IB20(USDC).transfer(msg.sender, usdcOut), "TRANSFER_FAILED");
 
-        uint256 remainingSupply = SHARE.totalSupply();
-        uint256 navPerShareNow = remainingSupply == 0 ? 1e18 : (totalNAV() * 1e18) / remainingSupply;
-        emit Redeemed(msg.sender, shareAmount, usdcOut, navPerShareNow);
+        // Deliberately not re-pricing the fund here. The payout above is derived entirely from
+        // balances, so calling totalNAV() only to fill an event field would let one stale feed —
+        // on a component this redemption may not even have touched — revert an exit that had
+        // already completed.
+        emit Redeemed(msg.sender, shareAmount, usdcOut, supply - shareAmount);
     }
 
     /// @notice Emergency in-kind redemption. No swaps, no router, no oracle. Always available —
@@ -285,9 +349,17 @@ contract SlateFund {
         uint256 supply = SHARE.totalSupply();
         if (shareAmount == 0 || supply == 0) revert ZeroShares();
 
+        // The fund's USDC is part of what a share represents — it is counted in NAV — so an
+        // in-kind exit that returned only the components would hand the redeemer's cash to the
+        // holders who stayed. A deposit that allocates nothing to swaps is explicitly allowed, and
+        // such a holder's entire position is cash.
+        uint256 cashClaim = (IB20(USDC).balanceOf(address(this)) * shareAmount) / supply;
+
         _releaseDepositAllowance(msg.sender, shareAmount);
         require(SHARE.transferFrom(msg.sender, address(this), shareAmount), "TRANSFER_FAILED");
         SHARE.burn(shareAmount);
+
+        if (cashClaim > 0) require(IB20(USDC).transfer(msg.sender, cashClaim), "TRANSFER_FAILED");
 
         for (uint256 i = 0; i < components.length; i++) {
             IB20 token = IB20(components[i].token);
@@ -312,9 +384,17 @@ contract SlateFund {
         uint256 supply = SHARE.totalSupply();
         if (shareAmount == 0 || supply == 0) revert ZeroShares();
 
+        uint256 cashClaim = (IB20(USDC).balanceOf(address(this)) * shareAmount) / supply;
+
         _releaseDepositAllowance(msg.sender, shareAmount);
         require(SHARE.transferFrom(msg.sender, address(this), shareAmount), "TRANSFER_FAILED");
         SHARE.burn(shareAmount);
+
+        uint256 delivered;
+        if (cashClaim > 0) {
+            require(IB20(USDC).transfer(msg.sender, cashClaim), "TRANSFER_FAILED");
+            delivered++;
+        }
 
         uint256 n = components.length;
         address[] memory blocked = new address[](n);
@@ -326,14 +406,26 @@ contract SlateFund {
             uint256 claim = (bal * shareAmount) / supply;
             if (claim == 0) continue;
 
+            // A bare catch would also swallow out-of-gas, turning a transient gas shortfall into
+            // the same permanent forfeiture as a real freeze. Under EIP-150 the callee gets at
+            // most 63/64 of what remains, so refusing to attempt the call without a comfortable
+            // margin keeps "blocked" meaning blocked.
+            if (gasleft() < GAS_FLOOR_PER_TRANSFER) {
+                revert InsufficientGasForTransfer(components[i].token);
+            }
+
             // A component that reverts, or returns false, is recorded rather than allowed to
             // unwind the whole exit.
             try token.transfer(msg.sender, claim) returns (bool ok) {
-                if (!ok) blocked[blockedCount++] = components[i].token;
+                if (ok) delivered++;
+                else blocked[blockedCount++] = components[i].token;
             } catch {
                 blocked[blockedCount++] = components[i].token;
             }
         }
+
+        // Burning a position in exchange for nothing must not be a successful transaction.
+        if (delivered == 0) revert NothingDelivered();
 
         address[] memory reported = new address[](blockedCount);
         for (uint256 i = 0; i < blockedCount; i++) {
@@ -373,12 +465,14 @@ contract SlateFund {
         }
 
         // Sells first so buys can draw on the resulting USDC.
+        uint256 tradedValue;
         for (uint256 i = 0; i < n; i++) {
             if (amounts[i] >= 0) continue;
             uint256 sellRaw = uint256(-amounts[i]);
             if (preValue[i] <= targetValue[i]) revert ComponentNotOverweight(i);
             uint256 sellValue = _quoteComponentToUsdc(components[i], sellRaw, _livePrice(components[i]));
             if (preValue[i] - sellValue < targetValue[i]) revert OverSell(i);
+            tradedValue += sellValue;
             _executeSwap(components[i].token, sellRaw, swapCalldata[i], i, false);
         }
         for (uint256 i = 0; i < n; i++) {
@@ -386,6 +480,7 @@ contract SlateFund {
             uint256 buyUsdc = uint256(amounts[i]);
             if (preValue[i] >= targetValue[i]) revert ComponentNotUnderweight(i);
             if (preValue[i] + buyUsdc > targetValue[i]) revert OverBuy(i);
+            tradedValue += buyUsdc;
             _executeSwap(USDC, buyUsdc, swapCalldata[i], i, true);
         }
 
@@ -393,7 +488,15 @@ contract SlateFund {
         if (maxDriftAfter > driftThresholdBps) revert DriftNotResolved(maxDriftAfter);
 
         uint256 navAfter = totalNAV();
-        uint256 reward = (navAfter * callerRewardBps) / 10_000;
+
+        // Charged on the value actually moved, never on total NAV. A reward proportional to the
+        // whole fund would pay a caller far more than the work performed, and drift is cheap to
+        // manufacture — idle cash alone produces it — so that shape would hand a standing income
+        // stream to anyone willing to churn the fund, the operator included. Capped by the cash on
+        // hand so a rebalance that deploys its proceeds cannot revert for want of a reserve.
+        uint256 reward = (tradedValue * callerRewardBps) / 10_000;
+        uint256 cash = IB20(USDC).balanceOf(address(this));
+        if (reward > cash) reward = cash;
         if (reward > 0) require(IB20(USDC).transfer(msg.sender, reward), "TRANSFER_FAILED");
 
         string memory id = string.concat("rebalance-", _toString(rebalanceCount));
@@ -434,9 +537,12 @@ contract SlateFund {
         nav += IB20(USDC).balanceOf(address(this));
     }
 
+    /// @notice NAV per share in USDC terms (6 decimals). An empty fund reports the bootstrap price
+    ///         of one USDC per share — in the same units as the live branch, not the 1e18 that
+    ///         would render as a trillion dollars.
     function navPerShare() external view returns (uint256) {
         uint256 supply = SHARE.totalSupply();
-        return supply == 0 ? 1e18 : (totalNAV() * 1e18) / supply;
+        return supply == 0 ? 1e6 : (totalNAV() * 1e18) / supply;
     }
 
     function currentWeights() external view returns (uint16[] memory weights) {
@@ -466,8 +572,10 @@ contract SlateFund {
     function feedsHealthy() external view returns (bool healthy, address staleFeed) {
         uint256 n = components.length;
         for (uint256 i = 0; i < n; i++) {
-            (,,, uint256 updatedAt,) = IAggregatorV3(components[i].feed).latestRoundData();
-            if (block.timestamp - updatedAt > feedStalenessTolerance) {
+            (, int256 answer,, uint256 updatedAt,) = IAggregatorV3(components[i].feed).latestRoundData();
+            // Mirrors every check `_livePrice` makes. Reporting healthy while a non-positive answer
+            // makes each priced call revert would be worse than useless.
+            if (answer <= 0 || block.timestamp - updatedAt > feedStalenessTolerance) {
                 return (false, components[i].feed);
             }
         }
@@ -500,13 +608,17 @@ contract SlateFund {
     }
 
     function setMaxSlippage(uint16 bps) external onlyOperator {
-        if (bps > 500) revert OutOfBounds();
+        // A floor as well as a ceiling: zero tolerance would demand an exact oracle match and brick
+        // every priced path, which is a denial of service dressed up as prudence.
+        if (bps < 10 || bps > 500) revert OutOfBounds();
         emit ParamsUpdated("maxSlippageBps", maxSlippageBps, bps);
         maxSlippageBps = bps;
     }
 
+    /// @notice Bounded at 1% of traded value. The reward is charged on volume, not on NAV, so this
+    ///         ceiling bounds what churning the fund can extract.
     function setCallerReward(uint16 bps) external onlyOperator {
-        if (bps > 50) revert OutOfBounds();
+        if (bps > 100) revert OutOfBounds();
         emit ParamsUpdated("callerRewardBps", callerRewardBps, bps);
         callerRewardBps = bps;
     }
@@ -517,27 +629,42 @@ contract SlateFund {
         feedStalenessTolerance = s;
     }
 
-    function setCaps(uint256 perWallet, uint256 total) external onlyOperator {
-        emit ParamsUpdated("maxDepositPerWallet", maxDepositPerWallet, perWallet);
-        emit ParamsUpdated("maxTotalDeposits", maxTotalDeposits, total);
-        maxDepositPerWallet = perWallet;
-        maxTotalDeposits = total;
+    /// @notice Bounded well below the NAV tolerance: a swap is validated against this price, so
+    ///         letting it age would reintroduce trading against a stale mark.
+    function setSwapPriceMaxAge(uint32 s) external onlyOperator {
+        if (s < 10 minutes || s > 6 hours) revert OutOfBounds();
+        emit ParamsUpdated("swapPriceMaxAge", swapPriceMaxAge, s);
+        swapPriceMaxAge = s;
+    }
+
+    /// @notice Caps are the only compensating control on an unaudited contract, so they are bounded
+    ///         like every other parameter rather than settable to anything.
+    function setCaps(uint256 perWallet, uint256 fundValue) external onlyOperator {
+        if (perWallet == 0 || fundValue == 0) revert OutOfBounds();
+        if (perWallet > fundValue) revert OutOfBounds();
+        if (fundValue > MAX_FUND_VALUE_CEILING) revert OutOfBounds();
+        emit ParamsUpdated("maxPositionPerWallet", maxPositionPerWallet, perWallet);
+        emit ParamsUpdated("maxFundValue", maxFundValue, fundValue);
+        maxPositionPerWallet = perWallet;
+        maxFundValue = fundValue;
     }
 
     /*//////////////////////////////////////////////////////////////
                                  INTERNAL
     //////////////////////////////////////////////////////////////*/
 
-    /// @dev Returns the share of `holder`'s recorded deposits that `shareAmount` represents, and
-    ///      frees it from both caps. Without this the caps would ratchet: a holder who fully exited
-    ///      could never deposit again, and a fund that had been fully redeemed would stay closed
-    ///      forever despite holding nothing. The caps are meant to bound live exposure, not
-    ///      cumulative lifetime flow.
-    ///
-    ///      Shares are freely transferable, so this accounting cannot be exact: a holder who sends
-    ///      shares away keeps their recorded deposit, and the recipient redeems without releasing
-    ///      any. It is therefore conservative — it never frees more capacity than the holder
-    ///      actually used — which is the right direction to err for a safety limit.
+    /// @dev Current value of `holder`'s stake, used to bound exposure on deposit. Measuring the
+    ///      live position rather than a running total of past deposits is what makes the cap
+    ///      unevadable: a holder cannot reset it by moving shares around, because the cap follows
+    ///      the shares.
+    function _positionValue(address holder, uint256 nav, uint256 supply) internal view returns (uint256) {
+        if (supply == 0 || nav == 0) return 0;
+        return (nav * SHARE.balanceOf(holder)) / supply;
+    }
+
+    /// @dev Reduces the holder's recorded cost basis in proportion to the position being redeemed.
+    ///      This figure drives the displayed P&L only — it gates nothing, so an inexact result
+    ///      cannot be used to exceed a cap.
     ///
     ///      Must be called before the shares are pulled in, while the holder still owns them.
     function _releaseDepositAllowance(address holder, uint256 shareAmount) internal {
@@ -553,8 +680,20 @@ contract SlateFund {
     /// @dev Reads the live TRV price for a component's feed, reverting `StaleFeed` per the
     ///      calibrated tolerance. Never trust a frozen oracle to price the fund.
     function _livePrice(Component memory c) internal view returns (uint256 answer) {
+        return _priceWithMaxAge(c, feedStalenessTolerance);
+    }
+
+    /// @dev The reference price a swap is judged against, held to a much tighter age than NAV. A
+    ///      weekend-old close is an acceptable basis for reporting what the fund is worth; it is
+    ///      not an acceptable basis for deciding whether a trade was fair, because a caller can
+    ///      trade against the difference.
+    function _swapPrice(Component memory c) internal view returns (uint256) {
+        return _priceWithMaxAge(c, swapPriceMaxAge);
+    }
+
+    function _priceWithMaxAge(Component memory c, uint256 maxAge) internal view returns (uint256 answer) {
         (, int256 a,, uint256 updatedAt,) = IAggregatorV3(c.feed).latestRoundData();
-        if (block.timestamp - updatedAt > feedStalenessTolerance) revert StaleFeed(c.feed, updatedAt);
+        if (block.timestamp - updatedAt > maxAge) revert StaleFeed(c.feed, updatedAt);
         if (a <= 0) revert StaleFeed(c.feed, updatedAt);
         // forge-lint: disable-next-line(unsafe-typecast)
         answer = uint256(a);
@@ -613,7 +752,8 @@ contract SlateFund {
         actualOut = outAfter - outBefore;
         IB20(tokenIn).approve(SWAP_ROUTER, 0);
 
-        uint256 answer = _livePrice(c);
+        // Judged against a deliberately fresher price than NAV uses.
+        uint256 answer = _swapPrice(c);
         uint256 expectedOut =
             buying ? _quoteUsdcToComponent(c, amountIn, answer) : _quoteComponentToUsdc(c, amountIn, answer);
         uint256 minOut = (expectedOut * (10_000 - maxSlippageBps)) / 10_000;

@@ -214,12 +214,8 @@ contract SlateFundForkTest is Test {
 
     /// @dev The unconditional exit, exercised against real tokens and with every real feed stale.
     function test_fork_redeemInKindReturnsRealTokens() public {
-        uint256 amount = 1e8;
-        _seedFund(amount);
-
-        // Mint shares to alice the only way the fund ever does: via a deposit. Here we shortcut the
-        // swap leg by seeding assets directly and depositing pure cash, which mints against the
-        // resulting NAV increase.
+        // Deposit into the empty fund first. Seeding components beforehand would leave assets with
+        // no supply behind them, which deposits now refuse rather than hand to the next arrival.
         uint256 cash = 100e6;
         deal(USDC, alice, cash);
 
@@ -230,6 +226,10 @@ contract SlateFundForkTest is Test {
         IB20(USDC).approve(address(fund), cash);
         fund.deposit(cash, sellAmounts, calls);
         vm.stopPrank();
+
+        // Now put real components behind those shares.
+        uint256 amount = 1e8;
+        _seedFund(amount);
 
         uint256 shares = share.balanceOf(alice);
         assertGt(shares, 0, "deposit minted shares");

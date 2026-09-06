@@ -230,13 +230,13 @@ export default function FundPage({ params }: { params: Promise<{ address: string
             </dd>
           </div>
           <div>
-            <dt className="text-neutral-500">Per-wallet cap</dt>
-            <dd className="mt-1 text-neutral-300">{formatUsd(summary.maxDepositPerWallet)}</dd>
+            <dt className="text-neutral-500">Per-wallet position cap</dt>
+            <dd className="mt-1 text-neutral-300">{formatUsd(summary.maxPositionPerWallet)}</dd>
           </div>
           <div>
-            <dt className="text-neutral-500">Fund cap</dt>
+            <dt className="text-neutral-500">Fund value cap</dt>
             <dd className="mt-1 text-neutral-300">
-              {formatUsd(summary.totalDeposited)} / {formatUsd(summary.maxTotalDeposits)}
+              {formatUsd(summary.totalNAV)} / {formatUsd(summary.maxFundValue)}
             </dd>
           </div>
         </dl>

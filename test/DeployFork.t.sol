@@ -68,7 +68,7 @@ contract DeployForkTest is Test {
 
         // Both price cleanly against the real feeds while empty.
         assertEq(f4.totalNAV(), 0);
-        assertEq(f4.navPerShare(), 1e18);
+        assertEq(f4.navPerShare(), 1e6, "empty fund quotes one USDC per share");
         (bool healthy,) = f4.feedsHealthy();
         assertTrue(healthy, "real feeds healthy at the pinned block");
     }
