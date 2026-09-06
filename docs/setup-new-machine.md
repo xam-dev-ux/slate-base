@@ -69,7 +69,22 @@ base-foundryup --install nightly-<sha>
 
 ## 3. Git identity and signing
 
-Nothing secret transfers between machines, by design. Generate a fresh signing key here:
+**Every commit in this repository is GPG-signed, and must stay that way.** `git commit -S`, never
+`--no-gpg-sign`. Author and committer are always `xam-dev-ux <xabiersm9@gmail.com>`, with no
+co-author trailers. See `docs/working-agreement.md`.
+
+An Ed25519 signing key already exists and is registered on the GitHub account:
+
+| | |
+|---|---|
+| Key ID | `31341823C0F7D930` |
+| Fingerprint | `0D7EB009312F48CA21B196E631341823C0F7D930` |
+| Identity | `xam-dev-ux <xabiersm9@gmail.com>` |
+| Registered | 2026-09-05, expires 2028-09-04 |
+
+That key's private half lives only on the machine that created it. **Do not copy it here** — it was
+generated without a passphrase, so moving it around means moving an unprotected signing identity
+through whatever channel you use. Generate a separate key for this machine instead:
 
 ```bash
 git config user.name  "xam-dev-ux"
@@ -78,18 +93,27 @@ git config user.email "xabiersm9@gmail.com"
 gpg --quick-generate-key "xam-dev-ux <xabiersm9@gmail.com>" ed25519 sign 2y
 gpg --list-secret-keys --keyid-format=long     # note the id after ed25519/
 
-git config user.signingkey <KEY_ID>
+git config user.signingkey <NEW_KEY_ID>
 git config commit.gpgsign true
+git config gpg.program "$(command -v gpg)"
 ```
 
-Add the **public** half to GitHub so commits show as Verified:
+Then add the **public** half to GitHub so new commits verify:
 
 ```bash
-gpg --armor --export <KEY_ID>
+gpg --armor --export <NEW_KEY_ID>
 ```
 
-Paste at <https://github.com/settings/gpg/new>. GitHub allows several keys per account, so commits
-signed on other machines stay verified.
+Paste at <https://github.com/settings/gpg/new>. GitHub accepts several keys per account, so commits
+already signed with `31341823C0F7D930` keep their Verified badge while new ones verify under this
+machine's key. Seeing two keys on the account is expected, not a mistake.
+
+Confirm it works before relying on it:
+
+```bash
+echo test | gpg --clearsign          # should emit a signed block
+git log -1 --show-signature          # should say "Good signature"
+```
 
 If a passphrase prompt fails with `Inappropriate ioctl for device`, add `export GPG_TTY=$(tty)` to
 your shell profile.
