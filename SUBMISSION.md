@@ -33,6 +33,50 @@ freely transferable B20 share token, and read every rebalance in plain English o
 
 **Builder Code:** TODO (register at dashboard.base.org, then set `NEXT_PUBLIC_BUILDER_CODE`)
 
+## How these assets actually work, and what that forces
+
+Everything below was measured on Base mainnet on 2026-09-05, not taken from documentation. Each
+one changed the design.
+
+**A dividend does not change your balance.** Coinbase applies corporate actions by raising the
+token's multiplier, so a holder's raw balance is untouched while the number of real shares it
+represents grows. `balanceOf` is therefore not the holding — `scaledBalanceOf` is. Slate shows both:
+tokens held, and shares owned.
+
+**The Chainlink feeds already price the multiplier in.** They publish Total Return Values, so
+`balance × TRV` counts the corporate action exactly once. Multiplying by the multiplier as well —
+the obvious-looking thing to do, given the token exposes it — would inflate NAV by the whole
+multiplier factor. `totalNAV()` deliberately never reads `multiplier()` or `scaledBalanceOf()`, and
+a dedicated test fires a multiplier change with the feed untouched and asserts NAV does not move by
+a single wei.
+
+**Every component is 8 decimals**, not 18, and so are the feeds, while USDC is 6. The fund derives
+each component's decimals on-chain at construction rather than trusting a deploy script constant,
+because getting this wrong silently misprices the whole basket.
+
+**The feeds are 24/5 and publish on deviation or heartbeat.** At the pinned fork block, GOOGLc had
+gone 245 minutes without an update *during market hours*, and a weekend gap runs 60–70 hours. So
+the staleness tolerance sits near the 72h ceiling — a tighter value would freeze the fund every
+weekend — and `totalNAV()` reverting on a stale feed is intended behaviour, not a bug. This is why
+`redeemInKind` exists: an exit that touches no oracle at all.
+
+**Transfers are policy-gated, and that nearly killed the product.** Every cbXXX transfer scope
+carries policy ID 5, not the always-allow default of `0`. Had that been an allowlist, no smart
+contract could ever custody these assets and a fund would be impossible. Querying the PolicyRegistry
+precompile shows it authorises every address tested, including never-seen ones — blocklist
+semantics. A fork test proves the fund can actually receive all four components rather than assuming
+it. The policy admin can still add addresses later, which is disclosed as a risk.
+
+**No tokenized stock has ever rebased.** Every one still reports a multiplier of exactly `1e18`, so
+the multiplier path is exercised only against mocks. The fork test asserts that unity value instead
+of pretending otherwise.
+
+**Only four of the thirteen are tradeable.** Real liquidity lives on Aerodrome Slipstream, not the
+legacy volatile-AMM factory, which holds decoy pools with dust reserves. COINc, CRCLc and INTCc have
+no pool anywhere on Base — the COINc contract shows only role grants and approvals, never a swap.
+Searching by symbol also surfaces impersonators mimicking the `0xb20…` vanity prefix, so pools must
+be resolved by exact contract address.
+
 ## What this builds on B20
 
 Slate does not merely hold tokenized stocks — the share token itself is a B20 Asset, and the
@@ -51,6 +95,41 @@ The underlying components are the tokenized stocks themselves, custodied directl
 with dividends and voting rights, not synthetic exposure. Their transfer scopes carry a live policy
 (ID 5) which the fork tests prove behaves as a blocklist — that a contract can custody these assets
 at all is verified onchain, not assumed.
+
+### Details of the standard that a naive reading gets wrong
+
+Each of these was found by reading `base-std` rather than assuming, and each would have shipped
+broken code.
+
+**`announce()` cannot carry the swaps.** Its `internalCalls` execute via self-`delegatecall` on the
+asset itself, so they can only invoke that token's own functions — never a swap router. The
+plausible-sounding design, wrapping the rebalance trades inside the announcement for atomicity, does
+not compile into anything that works. Slate executes the swaps as ordinary fund logic and calls
+`announce()` with an empty `internalCalls` array as a pure disclosure, in the same transaction. The
+bracket is still atomic where it matters: the announcement and the trades either both happen or
+neither does.
+
+**`burn` is single-argument and self-only.** There is no `burn(address, uint256)`; `burn(uint256)`
+burns the caller's own balance. Redemption therefore pulls the holder's shares in with
+`transferFrom` and then self-burns, which is why redeeming requires an approval on the share token.
+
+**`B20Constants.ALWAYS_ALLOW` does not exist.** The always-allow sentinel is policy ID `0`, the
+implicit default for any unassigned slot. Code referencing that constant does not compile. Slate
+simply never calls `updatePolicy`, which is what leaves shares freely transferable.
+
+**`updateExtraMetadata` is gated by `METADATA_ROLE`,** not `OPERATOR_ROLE` as the announcement
+machinery might suggest. The fund grants itself both at creation, or publishing its own index rule
+would revert.
+
+**Multiplier updates cannot be classified by event name.** The scheduled setter emits only
+`UIMultiplierUpdated`; the deprecated instant one emits that *and* `MultiplierUpdated` in the same
+transaction. The corporate-actions feed therefore classifies by co-occurrence within a transaction,
+and flags instant overrides as bypassing the scheduling window.
+
+**Stock Foundry cannot run any of this.** B20 tokens live at precompile addresses that only the
+Base-flavoured toolchain implements; stock `forge` fails with "call to non-contract address" the
+moment anything touches the factory. The test suite runs under `base-forge`, and `foundry.toml`
+carries `base = true`, without which the precompiles are not injected even under that binary.
 
 ## The app
 
@@ -108,6 +187,31 @@ Not built: a historical NAV chart. NAV history is not stored onchain, so chartin
 sparse points reconstructed from interaction events or historical `eth_call` against an archive
 node — and with a fund only days old there is nothing yet worth plotting.
 
+## The claims, and the tests that hold them up
+
+41 tests, all green: 31 unit under `base-forge` with the live precompiles, and 10 fork tests against
+real Base mainnet state pinned to block 50878627 — real tokens, real Chainlink feeds, the real B20
+factory, real Aerodrome pools as token sources.
+
+| Claim | What proves it |
+|---|---|
+| A corporate action is counted once, never twice | `test_navUnchangedByMultiplierAlone` fires a multiplier change with the feed untouched and asserts NAV moves zero. `test_dividendRaisesNavExactlyOnce` moves feed and multiplier together and asserts NAV rises by the feed's move alone |
+| The operator cannot move user funds | `test_operatorFunctionsCannotMoveFunds` exercises every operator power in sequence and asserts balances and supply are untouched. `test_operatorCannotMintShares` shows the role lives with the contract, not a key |
+| Anyone can rebalance | `testFuzz_rebalanceIsPermissionless` fuzzes the caller across arbitrary addresses |
+| A bad swap cannot be forced through | `test_rebalanceRevertsOnSlippageAtomically` and `test_depositRevertsOnBadSwapRate` reject execution outside the oracle-implied bound and leave state untouched |
+| A rebalance must actually rebalance | `test_rebalanceRejectsWrongDirection` rejects buying an already-overweight component even at a fair price |
+| Exit always works | `test_redeemInKindWorksPausedAndFullyStale` redeems with deposits paused and every feed frozen, after asserting that pricing itself reverts |
+| Shares can never be frozen | `test_shareTransfersCanNeverBeFrozen` asserts no account holds `PAUSE_ROLE`, that pausing reverts, that policies read `0`, and that a holder can transfer |
+| A depositor cannot spend others' cash | `test_depositCannotOverAllocateOthersCash` rejects swap legs summing beyond the deposit |
+| Nested entry is blocked | `test_reentrancyGuardBlocksNestedEntry` re-enters the fund from inside a swap and confirms the guard held |
+| No value leaks between holders | `testFuzz_navPerShareStableAcrossDeposits` fuzzes deposit sizes and pins NAV per share |
+| A contract can custody these assets | `test_fork_contractCanCustodyPolicyGatedTokens` moves all four real components into the fund under live policy 5 |
+| NAV matches the real oracles | `test_fork_navMatchesRealFeedPrices` recomputes NAV independently from live feeds |
+
+The deployment itself is rehearsed rather than attempted blind: `DeployForkTest` runs the exact
+path the scripts take — same factory, same baskets, same index-rule strings — against forked
+mainnet, and asserts both funds come out correctly configured.
+
 ## Contracts
 
 All on Base mainnet (chain 8453). Fill in after deployment.
@@ -153,10 +257,13 @@ pool anywhere on Base.
 4. **Permissionless rebalance (35s).** Show the rebalance status card: current drift, threshold,
    the reward on offer. Trigger it **from a wallet that is not the deployer** — this is the point.
    Show the transaction land.
-5. **The receipt (20s).** The new row in the rebalance history, quoted verbatim. Follow the link to
-   BaseScan and read the same `Announcement` event in the raw logs. "Nothing is summarised for you."
-6. **The trust property (15s).** Show the operator-powers panel. There is no withdraw function on
-   this contract. Show `redeemInKind` working with markets closed.
+5. **The receipt (20s).** The new row in the rebalance history, quoted verbatim, tagged with the
+   share you actually held at that block. Follow the link to BaseScan and read the same
+   `Announcement` event in the raw logs. "Nothing is summarised for you."
+6. **Don't take our word for it (15s).** Open *Verify this yourself*, copy the `totalNAV` command,
+   run it in a terminal, and match the number against the page.
+7. **The trust property (15s).** The operator-powers panel: there is no withdraw function on this
+   contract. Show `redeemInKind` working with markets closed and every feed frozen.
 
 ## Draft submission post
 
@@ -173,8 +280,8 @@ pool anywhere on Base.
 - [x] Liquidity re-measured; basket confirmed against live pools
 - [x] `grep -r "private-key"` returns only "never use" notes
 - [x] `.env` git-ignored; `ZEROX_API_KEY` server-side only
-- [x] Unit tests green (`make test`)
-- [x] Fork tests green against Base mainnet (`make test-fork`)
+- [x] Unit tests green: 31 under `base-forge` with live precompiles (`make test`)
+- [x] Fork tests green: 10 against real mainnet state at a pinned block (`make test-fork`)
 - [x] Security suite proves the operator cannot drain the fund
 - [x] Multiplier double-count test passes
 - [x] Deployment rehearsed on a mainnet fork
@@ -190,9 +297,22 @@ pool anywhere on Base.
 
 ## Known limitations (stated plainly)
 
-- No Coinbase Tokenized Stock has ever rebased; the multiplier path is tested only against mocks.
-- cbXXX transfers are gated by policy ID 5. It behaves as a blocklist today — a fork test proves a
-  contract can custody these tokens — but the policy admin could add addresses to it later.
-- Fork tests cover NAV, custody, staleness and in-kind exit against real state, but not real swap
-  execution; swap paths are covered against a mock router.
-- Unaudited. Caps are deliberately small: 500 USDC per wallet, 25,000 USDC per fund.
+- **The multiplier path is mock-only.** No Coinbase Tokenized Stock has ever rebased, so the code
+  that matters most on the day of a dividend has never met a real one. The fork test asserts the
+  unity multiplier rather than implying coverage that does not exist.
+- **Custody depends on a policy someone else controls.** cbXXX transfers are gated by policy ID 5.
+  It behaves as a blocklist today, and a fork test proves the fund can hold all four components —
+  but its admin could add addresses later, including this fund.
+- **Fork tests do not execute real swaps.** They cover NAV against live feeds, custody, staleness,
+  share creation through the real precompile and in-kind exit. Swap paths, including slippage
+  rejection, are covered against a mock router — they have not touched real Aerodrome liquidity.
+- **Voting rights are held but not exercisable.** These tokens carry real voting rights; the fund
+  custodies them and offers holders no mechanism to direct a vote. Nothing is claimed otherwise.
+- **Cost attribution is exact; the cap accounting is deliberately not.** Rebalance costs are
+  attributed from the stake replayed at that block. Deposit-cap accounting, by contrast, cannot be
+  exact with a freely transferable share — sending shares away keeps the sender's recorded deposit
+  — so it errs toward under-crediting capacity, the safe direction for a limit.
+- **Unaudited.** Caps are deliberately small: 500 USDC per wallet, 25,000 USDC per fund. They bound
+  live exposure rather than lifetime flow, so exiting frees capacity to return.
+- **Not a regulated fund**, and the underlying is Regulation S — not available to US persons. Slate
+  cannot geo-gate; Coinbase gates at acquisition.
