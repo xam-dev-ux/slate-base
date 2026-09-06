@@ -14,6 +14,7 @@ import { RebalancePanel } from "@/components/RebalancePanel";
 import { FeedHealthPanel } from "@/components/FeedHealthPanel";
 import { StaleFeedBanner } from "@/components/MarketSession";
 import { RedeemInKindButton } from "@/components/RedeemInKind";
+import { CorporateActions } from "@/components/CorporateActions";
 
 export default function FundPage({ params }: { params: Promise<{ address: string }> }) {
   const { address: raw } = use(params);
@@ -157,6 +158,12 @@ export default function FundPage({ params }: { params: Promise<{ address: string
         {summary.share && userShares !== undefined && userShares > 0n && (
           <RedeemInKindButton fund={fund} share={summary.share} shares={userShares} />
         )}
+        <Link
+          href={`/verify/${fund}`}
+          className="rounded-lg border border-white/15 px-4 py-2 text-sm text-neutral-200 transition hover:border-white/30 hover:text-white"
+        >
+          Verify this yourself
+        </Link>
       </div>
 
       <section className="mt-12">
@@ -194,13 +201,13 @@ export default function FundPage({ params }: { params: Promise<{ address: string
           link to read the same log yourself.
         </p>
         <div className="mt-4">
-          <RebalanceHistory
-            fund={fund}
-            share={summary.share}
-            userShareFraction={shareFraction}
-          />
+          <RebalanceHistory fund={fund} share={summary.share} />
         </div>
       </section>
+
+      <div className="mt-12">
+        <CorporateActions components={components} />
+      </div>
 
       <section className="mt-12 rounded-xl border border-white/10 bg-white/[0.02] p-6">
         <h2 className="text-sm font-medium text-white">Operator powers</h2>

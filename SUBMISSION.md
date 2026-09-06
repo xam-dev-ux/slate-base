@@ -54,7 +54,7 @@ at all is verified onchain, not assumed.
 
 ## The app
 
-Four routes, reading everything from chain — there is no backend, no database and no indexer. Every
+Five routes, reading everything from chain — there is no backend, no database and no indexer. Every
 number shown is a live contract call or a log the visitor can re-read themselves.
 
 **`/` — Funds.** Cards per fund: composition with target weights, TVL, rebalance count, and a badge
@@ -78,20 +78,35 @@ open, because that governs whether the oracles are moving.
   of what that role can and cannot do, read from the token's own metadata.
 - **Redeem in kind** — always available, including while deposits are paused and every feed is
   stale.
+- **Corporate actions** — a feed watching every component for multiplier changes, the mechanism by
+  which Coinbase reflects real dividends and splits. Scheduled updates are told apart from instant
+  overrides by whether the deprecated event co-occurs in the same transaction, not by event name.
+  It reads empty today because no tokenized stock has rebased yet, and says exactly that.
 
 **`/invest/[address]` — Deposit.** Amount entry against the live wallet cap, a preview of shares
 received at the current NAV per share, the per-component split of the deposit, then approve and
 deposit. Swap routes come from a 0x quote fetched through a server-side proxy so the API key never
 reaches the browser.
 
-**`/portfolio`** — Positions across every fund: shares held, current value, USDC deposited, and P&L.
+**`/verify/[address]` — Verify this yourself.** The exact `cast` commands to check NAV, holdings,
+the multiplier-adjusted share count, the oracle price, every announcement, the published index
+rule, and the role and policy assignments — each against Base mainnet, from the reader's own
+machine. It closes by naming what *cannot* be verified this way: that the underlying tokenized
+stocks are backed by real shares depends on the issuer and its custodian, not on any contract here.
+
+**`/portfolio`** — Positions across every fund: shares held, current value, USDC deposited, and
+P&L. Below them, a personal timeline of every rebalance that happened **while the viewer held
+shares**, across all funds, with the share of each cost that was genuinely theirs. Stakes are
+replayed from the share tokens' transfer logs, so a rebalance from before someone deposited is
+never billed to them.
 
 Throughout, the UI gates on the contract's own `feedsHealthy()` rather than on a clock: when the
 oracles are behind it explains that pricing is paused, and points at in-kind redemption as the exit
 that needs no oracle at all. The legal disclaimer appears on every page.
 
-Not built: a historical NAV chart, and a per-rebalance personal timeline on the portfolio page
-(attributed cost is shown on the fund page instead).
+Not built: a historical NAV chart. NAV history is not stored onchain, so charting it means either
+sparse points reconstructed from interaction events or historical `eth_call` against an archive
+node — and with a fund only days old there is nothing yet worth plotting.
 
 ## Contracts
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import type { Address } from "viem";
 import { useAccount, useReadContract } from "wagmi";
@@ -7,6 +8,11 @@ import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useFundList, useFundSummary, useShareInfo } from "@/lib/useFund";
 import { erc20Abi, slateFundAbi } from "@/lib/abis";
 import { formatUsd, formatShares } from "@/lib/format";
+import {
+  FundTimelineRows,
+  TimelineList,
+  type TimelineEntry,
+} from "@/components/PersonalTimeline";
 
 function PositionRow({ fund, user }: { fund: Address; user: Address }) {
   const summary = useFundSummary(fund);
@@ -87,6 +93,16 @@ export default function PortfolioPage() {
   const { address: user, isConnected } = useAccount();
   const { funds } = useFundList();
 
+  // Each fund reports its own timeline rows; merging them here gives one chronological view.
+  const [rowsByFund, setRowsByFund] = useState<Record<string, TimelineEntry[]>>({});
+  const collect = useCallback((fund: Address, rows: TimelineEntry[]) => {
+    setRowsByFund((prev) => ({ ...prev, [fund]: rows }));
+  }, []);
+
+  const timeline = Object.values(rowsByFund)
+    .flat()
+    .sort((a, b) => Number(b.blockNumber - a.blockNumber));
+
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
       <h1 className="text-3xl font-semibold tracking-tight text-white">Portfolio</h1>
@@ -110,10 +126,29 @@ export default function PortfolioPage() {
         </div>
       )}
 
+      {isConnected && user && funds.length > 0 && (
+        <section className="mt-14">
+          {funds.map((fund) => (
+            <FundTimelineRows key={fund} fund={fund} user={user} onRows={collect} />
+          ))}
+
+          <h2 className="text-sm font-medium uppercase tracking-wider text-neutral-500">
+            What happened while you held
+          </h2>
+          <p className="mt-2 max-w-2xl text-xs leading-relaxed text-neutral-600">
+            Every rebalance that took place while you held shares, across all funds, with the share
+            of its cost that was actually yours. Stakes are replayed from the share tokens&apos;
+            transfer logs, so a rebalance from before you deposited is not billed to you.
+          </p>
+          <div className="mt-4">
+            <TimelineList entries={timeline} />
+          </div>
+        </section>
+      )}
+
       <p className="mt-10 text-xs leading-relaxed text-neutral-600">
-        P&amp;L compares your position&apos;s current NAV share against the USDC you deposited. It
-        does not account for rebalance costs borne while you held, which are itemised per fund in
-        each fund&apos;s rebalance history.
+        P&amp;L compares your position&apos;s current NAV share against the USDC you deposited, and
+        does not subtract the rebalance costs itemised above.
       </p>
     </div>
   );

@@ -1,23 +1,23 @@
 "use client";
 
 import type { Address } from "viem";
-import { useRebalanceHistory } from "@/lib/useFund";
+import { useAccount } from "wagmi";
+import { useRebalanceHistory, useShareHistory } from "@/lib/useFund";
+import { fractionAt } from "@/lib/shareHistory";
 import { formatUsd, shortAddress } from "@/lib/format";
 import { explorerTx, explorerAddress } from "@/lib/config";
 
 /// The centrepiece of the app: the fund's own account of every rebalance it has performed, quoted
 /// verbatim from the description it wrote on-chain. Each row links out so the reader can verify
 /// the same log independently rather than taking this table's word for it.
-export function RebalanceHistory({
-  fund,
-  share,
-  userShareFraction,
-}: {
-  fund: Address;
-  share?: Address;
-  userShareFraction?: number;
-}) {
+///
+/// A viewer's share of each rebalance is computed from the stake they actually held at that block,
+/// replayed from the share token's transfer log — not from what they hold today, which would
+/// invoice new depositors for costs they never bore.
+export function RebalanceHistory({ fund, share }: { fund: Address; share?: Address }) {
+  const { address: user } = useAccount();
   const { data: records, isLoading } = useRebalanceHistory(fund, share);
+  const { data: checkpoints, isLoading: historyLoading } = useShareHistory(share, user);
 
   if (isLoading) {
     return <p className="text-sm text-neutral-500">Reading rebalance logs…</p>;
@@ -39,10 +39,10 @@ export function RebalanceHistory({
     <div className="space-y-3">
       {records.map((r) => {
         const cost = r.navBefore > r.navAfter ? r.navBefore - r.navAfter : 0n;
-        const yourCost =
-          userShareFraction && cost > 0n
-            ? (Number(cost) / 1e6) * userShareFraction
-            : undefined;
+
+        const heldFraction =
+          user && checkpoints ? fractionAt(checkpoints, r.blockNumber, r.logIndex) : 0;
+        const yourCost = heldFraction > 0 ? (Number(cost) / 1e6) * heldFraction : 0;
 
         return (
           <article
@@ -55,6 +55,24 @@ export function RebalanceHistory({
               </span>
               {r.announcementId && (
                 <span className="font-mono text-xs text-neutral-500">{r.announcementId}</span>
+              )}
+              {user && !historyLoading && (
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[11px] ${
+                    heldFraction > 0
+                      ? "bg-emerald-500/10 text-emerald-300"
+                      : "bg-white/5 text-neutral-500"
+                  }`}
+                  title={
+                    heldFraction > 0
+                      ? "Your stake at this block, replayed from the share token's transfer log"
+                      : "You held no shares when this rebalance happened"
+                  }
+                >
+                  {heldFraction > 0
+                    ? `you held ${(heldFraction * 100).toFixed(2)}%`
+                    : "not holding then"}
+                </span>
               )}
               <span className="ml-auto text-xs text-neutral-500">
                 block {String(r.blockNumber)}
@@ -79,9 +97,9 @@ export function RebalanceHistory({
                 <dt className="text-neutral-500">Cost</dt>
                 <dd className="mt-0.5 text-neutral-300">
                   {cost > 0n ? formatUsd(cost) : "—"}
-                  {yourCost !== undefined && yourCost > 0 && (
+                  {user && heldFraction > 0 && cost > 0n && (
                     <span className="ml-1 text-neutral-500">
-                      (yours ≈ ${yourCost.toFixed(4)})
+                      (yours ${yourCost.toFixed(4)})
                     </span>
                   )}
                 </dd>

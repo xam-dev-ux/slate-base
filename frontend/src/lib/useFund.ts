@@ -6,6 +6,11 @@ import { useQuery } from "@tanstack/react-query";
 import { parseAbiItem, type Address } from "viem";
 import { slateFundAbi, slateFactoryAbi, erc20Abi } from "./abis";
 import { CONFIGURED_FUNDS, FACTORY_ADDRESS, CHAIN } from "./config";
+import {
+  fetchShareTransfers,
+  replayForHolder,
+  type ShareCheckpoint,
+} from "./shareHistory";
 import { useNowSeconds } from "./useNow";
 
 export type Component = {
@@ -209,8 +214,25 @@ export type RebalanceRecord = {
   callerReward: bigint;
   txHash: `0x${string}`;
   blockNumber: bigint;
+  logIndex: number;
   announcementId?: string;
 };
+
+/// Replays the share token's transfer log so a holder's stake at any past block can be recovered.
+export function useShareHistory(share: Address | undefined, holder: Address | undefined) {
+  const client = usePublicClient({ chainId: CHAIN.id });
+
+  return useQuery({
+    queryKey: ["share-history", share, holder],
+    enabled: Boolean(client && share && holder),
+    staleTime: 60_000,
+    queryFn: async (): Promise<ShareCheckpoint[]> => {
+      if (!client || !share || !holder) return [];
+      const logs = await fetchShareTransfers(client, share);
+      return replayForHolder(logs, holder);
+    },
+  });
+}
 
 /// The centrepiece: every rebalance this fund has performed, with the description it wrote
 /// on-chain. Read straight from logs so anyone can verify the same data independently.
@@ -259,6 +281,7 @@ export function useRebalanceHistory(fund: Address | undefined, share: Address | 
           callerReward: log.args.callerReward ?? 0n,
           txHash: log.transactionHash,
           blockNumber: log.blockNumber,
+          logIndex: log.logIndex,
           announcementId: announcements.get(log.transactionHash),
         }))
         .sort((a, b) => Number(b.blockNumber - a.blockNumber));
