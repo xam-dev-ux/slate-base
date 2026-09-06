@@ -52,6 +52,47 @@ with dividends and voting rights, not synthetic exposure. Their transfer scopes 
 (ID 5) which the fork tests prove behaves as a blocklist — that a contract can custody these assets
 at all is verified onchain, not assumed.
 
+## The app
+
+Four routes, reading everything from chain — there is no backend, no database and no indexer. Every
+number shown is a live contract call or a log the visitor can re-read themselves.
+
+**`/` — Funds.** Cards per fund: composition with target weights, TVL, rebalance count, and a badge
+when deposits are paused. A market-session indicator in the header tracks whether US sessions are
+open, because that governs whether the oracles are moving.
+
+**`/funds/[address]` — Fund detail.** The centre of the product:
+
+- **Composition table** — target vs current weight, a drift bar against the threshold, tokens held,
+  and a *Shares owned* column from `scaledBalanceOf()` with the explanation that 1 token ≠ 1 share,
+  since Coinbase reflects dividends and splits by raising the multiplier.
+- **Rebalance history** — every rebalance the fund has performed, quoting **verbatim** the
+  description it wrote onchain, with NAV before and after, the cost, the address that triggered it,
+  and the viewer's own attributed share of that cost when they hold. Each row links to the
+  transaction so the reader can verify the same log rather than trusting the table.
+- **Rebalance status** — whether one is possible right now and why, current max drift, the
+  threshold, next eligible time, the reward on offer, and a *Trigger rebalance* button enabled for
+  anyone, not just the operator.
+- **Oracle health** — per-feed freshness with age, since feeds are 24/5 and publish on deviation.
+- **Operator powers** — the operator address, the deposit caps, the drift threshold, and the scope
+  of what that role can and cannot do, read from the token's own metadata.
+- **Redeem in kind** — always available, including while deposits are paused and every feed is
+  stale.
+
+**`/invest/[address]` — Deposit.** Amount entry against the live wallet cap, a preview of shares
+received at the current NAV per share, the per-component split of the deposit, then approve and
+deposit. Swap routes come from a 0x quote fetched through a server-side proxy so the API key never
+reaches the browser.
+
+**`/portfolio`** — Positions across every fund: shares held, current value, USDC deposited, and P&L.
+
+Throughout, the UI gates on the contract's own `feedsHealthy()` rather than on a clock: when the
+oracles are behind it explains that pricing is paused, and points at in-kind redemption as the exit
+that needs no oracle at all. The legal disclaimer appears on every page.
+
+Not built: a historical NAV chart, and a per-rebalance personal timeline on the portfolio page
+(attributed cost is shown on the fund page instead).
+
 ## Contracts
 
 All on Base mainnet (chain 8453). Fill in after deployment.
