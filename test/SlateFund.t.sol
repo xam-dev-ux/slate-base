@@ -306,6 +306,41 @@ contract SlateFundTest is Test {
         assertEq(share.balanceOf(alice), 0);
     }
 
+    /// @dev Caps bound live exposure, not lifetime flow. A holder who exits must be able to come
+    ///      back — otherwise the demo itself (deposit, redeem, deposit again) reverts, and anyone
+    ///      who ever used their full allowance is locked out permanently.
+    function test_exitingFreesCapacityToDepositAgain() public {
+        fund.setCaps(DEPOSIT, DEPOSIT); // wallet and fund caps both exactly one deposit
+
+        uint256 shares = _depositBalanced(alice, DEPOSIT);
+        assertEq(fund.depositedBy(alice), DEPOSIT, "allowance consumed");
+        assertEq(fund.totalDeposited(), DEPOSIT);
+
+        vm.startPrank(alice);
+        share.approve(address(fund), shares);
+        fund.redeemInKind(shares);
+        vm.stopPrank();
+
+        assertEq(fund.depositedBy(alice), 0, "full exit frees the wallet allowance");
+        assertEq(fund.totalDeposited(), 0, "and the fund allowance");
+
+        // The fund is empty again, so depositing must work exactly as it did the first time.
+        uint256 reShares = _depositBalanced(alice, DEPOSIT);
+        assertGt(reShares, 0, "holder can re-enter after exiting");
+    }
+
+    /// @dev A partial exit frees a proportional slice, not everything.
+    function test_partialExitFreesProportionalCapacity() public {
+        uint256 shares = _depositBalanced(alice, DEPOSIT);
+
+        vm.startPrank(alice);
+        share.approve(address(fund), shares / 4);
+        fund.redeemInKind(shares / 4);
+        vm.stopPrank();
+
+        assertApproxEqAbs(fund.depositedBy(alice), (DEPOSIT * 3) / 4, 2, "three quarters still used");
+    }
+
     function test_redeemingEntireSupplyLeavesNoDust() public {
         uint256 aliceShares = _depositBalanced(alice, DEPOSIT);
         uint256 bobShares = _depositBalanced(bob, DEPOSIT);

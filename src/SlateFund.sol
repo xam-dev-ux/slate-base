@@ -257,6 +257,7 @@ contract SlateFund {
 
         uint256 usdcOut = (IB20(USDC).balanceOf(address(this)) * shareAmount) / supply;
 
+        _releaseDepositAllowance(msg.sender, shareAmount);
         require(SHARE.transferFrom(msg.sender, address(this), shareAmount), "TRANSFER_FAILED");
         SHARE.burn(shareAmount);
 
@@ -282,6 +283,7 @@ contract SlateFund {
         uint256 supply = SHARE.totalSupply();
         if (shareAmount == 0 || supply == 0) revert ZeroShares();
 
+        _releaseDepositAllowance(msg.sender, shareAmount);
         require(SHARE.transferFrom(msg.sender, address(this), shareAmount), "TRANSFER_FAILED");
         SHARE.burn(shareAmount);
 
@@ -478,6 +480,28 @@ contract SlateFund {
     /*//////////////////////////////////////////////////////////////
                                  INTERNAL
     //////////////////////////////////////////////////////////////*/
+
+    /// @dev Returns the share of `holder`'s recorded deposits that `shareAmount` represents, and
+    ///      frees it from both caps. Without this the caps would ratchet: a holder who fully exited
+    ///      could never deposit again, and a fund that had been fully redeemed would stay closed
+    ///      forever despite holding nothing. The caps are meant to bound live exposure, not
+    ///      cumulative lifetime flow.
+    ///
+    ///      Shares are freely transferable, so this accounting cannot be exact: a holder who sends
+    ///      shares away keeps their recorded deposit, and the recipient redeems without releasing
+    ///      any. It is therefore conservative — it never frees more capacity than the holder
+    ///      actually used — which is the right direction to err for a safety limit.
+    ///
+    ///      Must be called before the shares are pulled in, while the holder still owns them.
+    function _releaseDepositAllowance(address holder, uint256 shareAmount) internal {
+        uint256 held = SHARE.balanceOf(holder);
+        uint256 recorded = depositedBy[holder];
+        if (held == 0 || recorded == 0) return;
+
+        uint256 released = shareAmount >= held ? recorded : (recorded * shareAmount) / held;
+        depositedBy[holder] = recorded - released;
+        totalDeposited = released > totalDeposited ? 0 : totalDeposited - released;
+    }
 
     /// @dev Reads the live TRV price for a component's feed, reverting `StaleFeed` per the
     ///      calibrated tolerance. Never trust a frozen oracle to price the fund.
