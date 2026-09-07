@@ -6,6 +6,9 @@ solc = "0.8.30"
 optimizer = true
 optimizer_runs = 200
 base = true
+bytecode_hash = "none"
+cbor_metadata = false
+via_ir = true
 
 remappings = [
     "base-std/=lib/base-std/src/",
