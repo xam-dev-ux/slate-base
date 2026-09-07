@@ -15,6 +15,7 @@ import { FeedHealthPanel } from "@/components/FeedHealthPanel";
 import { StaleFeedBanner } from "@/components/MarketSession";
 import { RedeemInKindButton } from "@/components/RedeemInKind";
 import { CorporateActions } from "@/components/CorporateActions";
+import { AddToWalletButton } from "@/components/AddToWalletButton";
 
 export default function FundPage({ params }: { params: Promise<{ address: string }> }) {
   const { address: raw } = use(params);
@@ -127,6 +128,9 @@ export default function FundPage({ params }: { params: Promise<{ address: string
               >
                 share token {shortAddress(summary.share)}
               </a>
+            )}
+            {summary.share && user && (
+              <AddToWalletButton address={summary.share} symbol={share.symbol} />
             )}
           </div>
         </div>

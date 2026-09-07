@@ -13,6 +13,7 @@ import {
   TimelineList,
   type TimelineEntry,
 } from "@/components/PersonalTimeline";
+import { AddToWalletButton } from "@/components/AddToWalletButton";
 
 function PositionRow({ fund, user }: { fund: Address; user: Address }) {
   const summary = useFundSummary(fund);
@@ -54,6 +55,7 @@ function PositionRow({ fund, user }: { fund: Address; user: Address }) {
       <div className="min-w-[180px]">
         <p className="font-medium text-white">{share.name ?? "…"}</p>
         <p className="mt-0.5 font-mono text-xs text-neutral-500">{share.symbol}</p>
+        {summary.share && <AddToWalletButton address={summary.share} symbol={share.symbol} />}
       </div>
 
       <div>
