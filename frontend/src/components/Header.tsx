@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { MarketSessionBadge } from "./MarketSession";
+import { HowItWorksModal } from "./HowItWorksModal";
 
 export function Header() {
   return (
@@ -22,6 +23,7 @@ export function Header() {
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
+          <HowItWorksModal />
           <span className="hidden sm:block">
             <MarketSessionBadge />
           </span>

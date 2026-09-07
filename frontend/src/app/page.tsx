@@ -5,12 +5,14 @@ import { FundCard } from "@/components/FundCard";
 
 const STEPS = [
   {
-    title: "Deposit USDC, receive a B20 share token",
-    body: "Your shares represent a proportional claim on a custodied basket of Coinbase Tokenized Stocks. Real ownership, with dividends and voting rights attached — not synthetic exposure.",
+    title:
+      "Deposit USDC into a shared basket and receive a transferable B20 share token representing your proportional stake.",
+    body: "It's a standard token, not an entry in our database: send it, hold it, or exit by selling it instead of redeeming. Real ownership, with dividends and voting rights attached — not synthetic exposure.",
   },
   {
-    title: "Anyone can rebalance, and earn a fee for it",
-    body: "When a component drifts past its threshold, the fund becomes rebalanceable by anyone. Trigger it yourself and collect the caller reward. No privileged keeper, no backend with keys.",
+    title:
+      "When weights drift, the whole fund rebalances at once. Anyone can trigger it and earn a fee — the operator has no special role here.",
+    body: "Every holder shares the same basket and the same rebalance, so the cost lands on each one proportionally — the dashboard shows exactly what yours was. No privileged keeper, no backend with keys.",
   },
   {
     title: "Every rebalance is announced onchain, in plain English",
