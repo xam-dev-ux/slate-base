@@ -4,6 +4,7 @@ import { usePublicClient } from "wagmi";
 import { useQuery } from "@tanstack/react-query";
 import { parseAbiItem, type Address } from "viem";
 import { CHAIN, GENESIS_BLOCK } from "./config";
+import { getLogsChunked } from "./getLogsChunked";
 import type { Component } from "./useFund";
 
 /// The scheduled setter, and the canonical path for corporate actions. Carries both multipliers
@@ -71,26 +72,27 @@ export function useCorporateActions(components: Component[]) {
       // stops being true.
       const perToken = await Promise.all(
         components.map(async (component) => {
-          const [scheduled, instant, cancelled] = await Promise.all([
-            client.getLogs({
+          const [scheduled, instant, cancelled] = (await Promise.all([
+            getLogsChunked(client, {
               address: component.token,
               event: UI_MULTIPLIER_UPDATED,
               fromBlock: GENESIS_BLOCK,
-              toBlock: "latest",
             }),
-            client.getLogs({
+            getLogsChunked(client, {
               address: component.token,
               event: MULTIPLIER_UPDATED,
               fromBlock: GENESIS_BLOCK,
-              toBlock: "latest",
             }),
-            client.getLogs({
+            getLogsChunked(client, {
               address: component.token,
               event: UI_MULTIPLIER_CANCELLED,
               fromBlock: GENESIS_BLOCK,
-              toBlock: "latest",
             }),
-          ]);
+          ])) as [
+            Awaited<ReturnType<typeof client.getLogs<typeof UI_MULTIPLIER_UPDATED>>>,
+            Awaited<ReturnType<typeof client.getLogs<typeof MULTIPLIER_UPDATED>>>,
+            Awaited<ReturnType<typeof client.getLogs<typeof UI_MULTIPLIER_CANCELLED>>>,
+          ];
 
           // Classify by co-occurrence in the same transaction, never by event name.
           const instantTxs = new Set(instant.map((l) => l.transactionHash));

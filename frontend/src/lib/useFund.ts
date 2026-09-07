@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { parseAbiItem, type Address } from "viem";
 import { slateFundAbi, slateFactoryAbi, erc20Abi } from "./abis";
 import { CONFIGURED_FUNDS, FACTORY_ADDRESS, CHAIN, GENESIS_BLOCK } from "./config";
+import { getLogsChunked } from "./getLogsChunked";
 import {
   fetchShareTransfers,
   replayForHolder,
@@ -249,23 +250,21 @@ export function useRebalanceHistory(fund: Address | undefined, share: Address | 
     queryFn: async (): Promise<RebalanceRecord[]> => {
       if (!client || !fund) return [];
 
-      const logs = await client.getLogs({
+      const logs = (await getLogsChunked(client, {
         address: fund,
         event: REBALANCED_EVENT,
         fromBlock: GENESIS_BLOCK,
-        toBlock: "latest",
-      });
+      })) as Awaited<ReturnType<typeof client.getLogs<typeof REBALANCED_EVENT>>>;
 
       // Pair each rebalance with the announcement emitted in the same transaction.
       const announcements = new Map<string, string>();
       if (share) {
         try {
-          const annLogs = await client.getLogs({
+          const annLogs = (await getLogsChunked(client, {
             address: share,
             event: ANNOUNCEMENT_EVENT,
             fromBlock: GENESIS_BLOCK,
-            toBlock: "latest",
-          });
+          })) as Awaited<ReturnType<typeof client.getLogs<typeof ANNOUNCEMENT_EVENT>>>;
           for (const log of annLogs) {
             if (log.args.id) announcements.set(log.transactionHash, log.args.id);
           }

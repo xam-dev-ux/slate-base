@@ -1,21 +1,28 @@
 import { http, createConfig } from "wagmi";
 import { base } from "wagmi/chains";
 import { coinbaseWallet, injected, walletConnect } from "wagmi/connectors";
+import { farcasterMiniApp } from "@farcaster/miniapp-wagmi-connector";
 import type { Address } from "viem";
 
 export const CHAIN = base;
 
-/// Block where SlateFactory was first deployed on Base mainnet. No SlateFund, share token, or
-/// factory-issued event can exist before this — bounding log scans here instead of "earliest"
-/// keeps `eth_getLogs` within what public RPC endpoints will actually serve (mainnet.base.org
-/// rejects a full-history scan with a 413).
-export const GENESIS_BLOCK = 50_967_435n;
+/// Block where the current SlateFactory (Aerodrome swap router) was deployed on Base mainnet. No
+/// SlateFund, share token, or factory-issued event can exist before this — bounding log scans here
+/// instead of "earliest" keeps `eth_getLogs` within what public RPC endpoints will serve at all
+/// (mainnet.base.org rejects a full-history scan outright). The remaining distance to "latest"
+/// still grows past that RPC's separate 10,000-block range cap within hours, so `getLogsChunked`
+/// (see `lib/getLogsChunked.ts`) paginates from this bound rather than issuing it as one call.
+export const GENESIS_BLOCK = 50_984_267n;
 
 const wcProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
 
 export const wagmiConfig = createConfig({
   chains: [base],
   connectors: [
+    // Base App's in-app browser bridges the wallet through this connector, not a plain injected
+    // provider — without it, and without calling the mini-app SDK's ready() (see providers.tsx),
+    // "Connect" does nothing there even though the same button works in a normal browser.
+    farcasterMiniApp(),
     injected(),
     coinbaseWallet({ appName: "Slate" }),
     ...(wcProjectId ? [walletConnect({ projectId: wcProjectId })] : []),

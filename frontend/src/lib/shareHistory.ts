@@ -1,5 +1,6 @@
 import { parseAbiItem, type Address, type PublicClient } from "viem";
 import { GENESIS_BLOCK } from "./config";
+import { getLogsChunked } from "./getLogsChunked";
 
 export const TRANSFER_EVENT = parseAbiItem(
   "event Transfer(address indexed from, address indexed to, uint256 amount)"
@@ -87,10 +88,9 @@ export function fractionAt(
 }
 
 export async function fetchShareTransfers(client: PublicClient, share: Address) {
-  return client.getLogs({
+  return (await getLogsChunked(client, {
     address: share,
     event: TRANSFER_EVENT,
     fromBlock: GENESIS_BLOCK,
-    toBlock: "latest",
-  });
+  })) as Awaited<ReturnType<typeof client.getLogs<typeof TRANSFER_EVENT>>>;
 }
