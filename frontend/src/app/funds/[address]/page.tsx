@@ -152,7 +152,11 @@ export default function FundPage({ params }: { params: Promise<{ address: string
           <div>
             <dt className="text-xs text-neutral-500">Your position</dt>
             <dd className="mt-1 text-xl font-medium text-white">
-              {userShares ? formatUsd(userValue) : "—"}
+              {userShares
+                ? userValue !== undefined
+                  ? formatUsd(userValue)
+                  : "…"
+                : "—"}
               {userShares !== undefined && userShares > 0n && (
                 <span className="ml-2 text-xs text-neutral-500">
                   {formatShares(userShares)} shares
@@ -204,7 +208,11 @@ export default function FundPage({ params }: { params: Promise<{ address: string
           Composition
         </h2>
         <div className="mt-4">
-          <CompositionTable components={components} />
+          {components.length === 0 ? (
+            <p className="text-sm text-neutral-500">Loading composition…</p>
+          ) : (
+            <CompositionTable components={components} />
+          )}
         </div>
       </section>
 
