@@ -6,7 +6,7 @@ import { formatTimestamp, shortAddress } from "@/lib/format";
 import { explorerTx } from "@/lib/config";
 
 export function CorporateActions({ components }: { components: Component[] }) {
-  const { data: actions, isLoading } = useCorporateActions(components);
+  const { data: actions, isLoading, isError, refetch } = useCorporateActions(components);
 
   return (
     <section>
@@ -22,6 +22,19 @@ export function CorporateActions({ components }: { components: Component[] }) {
       <div className="mt-4">
         {isLoading ? (
           <p className="text-sm text-neutral-500">Scanning component logs…</p>
+        ) : isError ? (
+          <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-6">
+            <p className="text-sm text-neutral-400">
+              Couldn&apos;t reach the RPC to scan component logs.
+            </p>
+            <button
+              type="button"
+              onClick={() => refetch()}
+              className="mt-3 rounded-lg border border-white/15 px-3 py-1.5 text-xs text-neutral-200 transition hover:border-white/30 hover:text-white"
+            >
+              Retry
+            </button>
+          </div>
         ) : !actions || actions.length === 0 ? (
           <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-6">
             <p className="text-sm text-neutral-400">No corporate action yet.</p>

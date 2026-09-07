@@ -34,8 +34,11 @@ export const wagmiConfig = createConfig({
     // limiter time to reset instead of hammering it again a moment later.
     [base.id]: http(process.env.NEXT_PUBLIC_RPC_URL ?? "https://mainnet.base.org", {
       batch: { batchSize: 50, wait: 50 },
-      retryCount: 5,
-      retryDelay: 1_000,
+      // Stacked on top of react-query's own retries, 5×1s here could compound into a minute-plus
+      // wait before a query ever reaches an error state a user can act on (see the fund page's
+      // log scans) — 3 is enough to ride out a transient 429 without disappearing that long.
+      retryCount: 3,
+      retryDelay: 750,
     }),
   },
   ssr: true,

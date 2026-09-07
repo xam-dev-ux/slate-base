@@ -62,6 +62,7 @@ export function useCorporateActions(components: Component[]) {
     queryKey: ["corporate-actions", tokens],
     enabled: Boolean(client) && components.length > 0,
     staleTime: 5 * 60_000,
+    retry: 2,
     queryFn: async (): Promise<CorporateAction[]> => {
       if (!client) return [];
 
@@ -70,49 +71,57 @@ export function useCorporateActions(components: Component[]) {
       // real tradeoff, made acceptable only because no Coinbase Tokenized Stock has rebased yet
       // (see the module doc above) — there is nothing earlier to miss today. Revisit this if that
       // stops being true.
-      const perToken = await Promise.all(
-        components.map(async (component) => {
-          const [scheduled, instant, cancelled] = (await Promise.all([
-            getLogsChunked(client, {
-              address: component.token,
-              event: UI_MULTIPLIER_UPDATED,
-              fromBlock: GENESIS_BLOCK,
-            }),
-            getLogsChunked(client, {
-              address: component.token,
-              event: MULTIPLIER_UPDATED,
-              fromBlock: GENESIS_BLOCK,
-            }),
-            getLogsChunked(client, {
-              address: component.token,
-              event: UI_MULTIPLIER_CANCELLED,
-              fromBlock: GENESIS_BLOCK,
-            }),
-          ])) as [
-            Awaited<ReturnType<typeof client.getLogs<typeof UI_MULTIPLIER_UPDATED>>>,
-            Awaited<ReturnType<typeof client.getLogs<typeof MULTIPLIER_UPDATED>>>,
-            Awaited<ReturnType<typeof client.getLogs<typeof UI_MULTIPLIER_CANCELLED>>>,
-          ];
+      //
+      // One combined scan across every component address and all three event types, rather than
+      // 3 separate series per component (up to 12 chunked series total on a 4-component basket):
+      // that many concurrent RPC calls against a rate-limited public endpoint is what left this
+      // stuck on "Scanning component logs…" far longer than the data actually took to fetch.
+      const logs = (await getLogsChunked(client, {
+        address: components.map((c) => c.token),
+        events: [UI_MULTIPLIER_UPDATED, MULTIPLIER_UPDATED, UI_MULTIPLIER_CANCELLED],
+        fromBlock: GENESIS_BLOCK,
+      })) as Awaited<
+        ReturnType<
+          typeof client.getLogs<
+            undefined,
+            readonly [
+              typeof UI_MULTIPLIER_UPDATED,
+              typeof MULTIPLIER_UPDATED,
+              typeof UI_MULTIPLIER_CANCELLED,
+            ]
+          >
+        >
+      >;
 
-          // Classify by co-occurrence in the same transaction, never by event name.
-          const instantTxs = new Set(instant.map((l) => l.transactionHash));
-          const cancelledTxs = new Set(cancelled.map((l) => l.transactionHash));
+      const byToken = new Map(components.map((c) => [c.token.toLowerCase(), c]));
 
-          return scheduled.map((log) => ({
-            token: component.token,
-            symbol: component.symbol,
-            oldMultiplier: log.args.oldMultiplier ?? 0n,
-            newMultiplier: log.args.newMultiplier ?? 0n,
-            effectiveAt: log.args.effectiveAtTimestamp ?? 0n,
-            blockNumber: log.blockNumber,
-            txHash: log.transactionHash,
-            immediate: instantTxs.has(log.transactionHash),
-            cancelled: cancelledTxs.has(log.transactionHash),
-          }));
-        })
-      );
+      const results: CorporateAction[] = [];
+      for (const log of logs) {
+        if (log.eventName !== "UIMultiplierUpdated") continue;
+        const component = byToken.get(log.address.toLowerCase());
+        if (!component) continue;
 
-      return perToken.flat().sort((a, b) => Number(b.blockNumber - a.blockNumber));
+        // Classify by co-occurrence in the same transaction, never by event name.
+        const sameTx = logs.filter(
+          (l) => l.transactionHash === log.transactionHash && l.address === log.address
+        );
+        const immediate = sameTx.some((l) => l.eventName === "MultiplierUpdated");
+        const cancelled = sameTx.some((l) => l.eventName === "UIMultiplierUpdateCancelled");
+
+        results.push({
+          token: component.token,
+          symbol: component.symbol,
+          oldMultiplier: log.args.oldMultiplier ?? 0n,
+          newMultiplier: log.args.newMultiplier ?? 0n,
+          effectiveAt: log.args.effectiveAtTimestamp ?? 0n,
+          blockNumber: log.blockNumber,
+          txHash: log.transactionHash,
+          immediate,
+          cancelled,
+        });
+      }
+
+      return results.sort((a, b) => Number(b.blockNumber - a.blockNumber));
     },
   });
 }

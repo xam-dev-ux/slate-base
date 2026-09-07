@@ -16,11 +16,26 @@ import { explorerTx, explorerAddress } from "@/lib/config";
 /// invoice new depositors for costs they never bore.
 export function RebalanceHistory({ fund, share }: { fund: Address; share?: Address }) {
   const { address: user } = useAccount();
-  const { data: records, isLoading } = useRebalanceHistory(fund, share);
+  const { data: records, isLoading, isError, refetch } = useRebalanceHistory(fund, share);
   const { data: checkpoints, isLoading: historyLoading } = useShareHistory(share, user);
 
   if (isLoading) {
     return <p className="text-sm text-neutral-500">Reading rebalance logs…</p>;
+  }
+
+  if (isError) {
+    return (
+      <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-8 text-center">
+        <p className="text-sm text-neutral-400">Couldn&apos;t reach the RPC to read rebalance logs.</p>
+        <button
+          type="button"
+          onClick={() => refetch()}
+          className="mt-3 rounded-lg border border-white/15 px-3 py-1.5 text-xs text-neutral-200 transition hover:border-white/30 hover:text-white"
+        >
+          Retry
+        </button>
+      </div>
+    );
   }
 
   if (!records || records.length === 0) {

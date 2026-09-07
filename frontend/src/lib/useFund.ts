@@ -247,6 +247,10 @@ export function useRebalanceHistory(fund: Address | undefined, share: Address | 
     queryKey: ["rebalance-history", fund, share],
     enabled: Boolean(client && fund),
     staleTime: 60_000,
+    // Bounds worst-case wait before this reaches a retryable error state — stacked on top of the
+    // transport's own per-call retries, the default (3) could take a lot longer than a user should
+    // stare at "Reading rebalance logs…" before getting a Retry button.
+    retry: 2,
     queryFn: async (): Promise<RebalanceRecord[]> => {
       if (!client || !fund) return [];
 
