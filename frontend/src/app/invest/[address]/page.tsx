@@ -55,7 +55,13 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
   // for whether a trade against it was fair. A deposit can look perfectly fine by the NAV-level
   // check and still revert deep in the swap for this reason, so it needs its own check here.
   const swapFeeds = useFeedHealth(components, swapPriceMaxAge as bigint | undefined);
-  const swapPricingStale = swapFeeds.some((f) => f.isStale);
+  // Fail safe, not open: useFeedHealth falls back to a lenient default tolerance when no bound is
+  // passed, which is right for display but wrong for a gate — before swapPriceMaxAge has actually
+  // loaded (a slow or rate-limited RPC call, not just "still rendering"), this must block rather
+  // than silently judge freshness against the wrong, looser number. This is what let a deposit
+  // through the exact way it wasn't supposed to: a feed already past the real 1h swap bound but
+  // still within the 72h NAV one read as "fine" while swapPriceMaxAge hadn't resolved yet.
+  const swapPricingStale = swapPriceMaxAge === undefined || swapFeeds.some((f) => f.isStale);
 
   const { writeContractAsync, isPending } = useWriteContract();
   const { isLoading: isApproveConfirming, isSuccess: isApproveSuccess } =

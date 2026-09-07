@@ -83,9 +83,12 @@ export function RebalancePanel({
 
   // Rebalance legs are judged against swapPriceMaxAge (1h by default), much tighter than the
   // feedStalenessTolerance (72h) `totalNAV()`/`pricingUnavailable` above tolerate — see the same
-  // note on the invest page. `isStale` here reflects that tighter bound, not the NAV one.
+  // note on the invest page. `isStale` here reflects that tighter bound, not the NAV one. Fail
+  // safe while swapPriceMaxAge hasn't loaded yet, rather than falling back to useFeedHealth's
+  // lenient default tolerance — the same gap that let a deposit through on a feed already past
+  // the real bound.
   const feeds = useFeedHealth(components, swapPriceMaxAge as bigint | undefined);
-  const swapPricingStale = feeds.some((f) => f.isStale);
+  const swapPricingStale = swapPriceMaxAge === undefined || feeds.some((f) => f.isStale);
 
   const reward =
     totalNAV !== undefined && callerRewardBps !== undefined
