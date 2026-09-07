@@ -22,7 +22,7 @@ export default function TermsPage() {
           <p className="mt-2">
             © 2026{" "}
             <a
-              href="https://github.com/xam-dev-ux"
+              href="https://github.com/xam-dev-ux/slate-base"
               target="_blank"
               rel="noopener noreferrer"
               className="text-indigo-400 underline decoration-dotted hover:text-indigo-300"
