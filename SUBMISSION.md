@@ -266,26 +266,79 @@ pool anywhere on Base.
 | Real rebalance | TODO | Record how drift was achieved |
 | `announce()` on that rebalance | TODO | The description visible on BaseScan |
 
-## Demo video script (~2 min)
+## Demo video script — Loom (~3:10)
 
-1. **The problem (15s).** Index products ask you to trust that the manager rebalanced the way they
-   said. Show a fund detail page. "Every rebalance this fund has ever made is right here, in the
-   fund's own words, written onchain."
-2. **Composition (20s).** Walk the composition table. Point at the "Shares owned" column: 1 token
-   is not 1 share — Coinbase reflects dividends and splits by raising a multiplier, so the real
-   share count grows while the balance does not. Slate reads that directly.
-3. **Deposit (25s).** Deposit USDC from a second wallet. Show the per-component split and the
-   preview. Approve, deposit, show the shares arrive.
-4. **Permissionless rebalance (35s).** Show the rebalance status card: current drift, threshold,
-   the reward on offer. Trigger it **from a wallet that is not the deployer** — this is the point.
-   Show the transaction land.
-5. **The receipt (20s).** The new row in the rebalance history, quoted verbatim, tagged with the
-   share you actually held at that block. Follow the link to BaseScan and read the same
-   `Announcement` event in the raw logs. "Nothing is summarised for you."
-6. **Don't take our word for it (15s).** Open *Verify this yourself*, copy the `totalNAV` command,
-   run it in a terminal, and match the number against the page.
-7. **The trust property (15s).** The operator-powers panel: there is no withdraw function on this
-   contract. Show `redeemInKind` working with markets closed and every feed frozen.
+**0:00–0:20 — El problema**
+
+> "Coinbase ha traído 13 acciones tokenizadas a Base. Si quieres exposición diversificada hoy
+> tienes que hacer varios swaps manuales y rebalancear a mano cuando los pesos se desvían. Eso no
+> escala, y nadie audita si lo has hecho bien."
+
+**0:20–0:50 — La solución en pantalla**
+
+Abres el sitio. Muestras los fondos. Entras en Slate Big Tech 4. Enseñas la tabla de composición:
+tickers, peso objetivo, peso actual, barra de deriva.
+
+**0:50–1:30 — Depósito real en mainnet**
+
+Conectas wallet. Metes una cantidad pequeña de USDC. Muestras la preview con el desglose por
+componente. Firmas approve + deposit. Enseñas la posición apareciendo.
+
+> "Fíjate que no me han llegado cuatro tokens al wallet. Me ha llegado uno: SLATE4. Ese token
+> representa mi trozo de una cesta común que compartimos todos los que hemos depositado."
+
+Esto tiene que ser una transacción real en mainnet. Si es un mock, se nota.
+
+**1:30–1:55 — Diferenciador 1: la participación es un token**
+
+Abres el wallet, muestras el token SLATE4 en el balance.
+
+> "Lo que tienes no es un apunte en mi base de datos. Es un token B20 estándar, totalmente
+> transferible. Puedes mandárselo a alguien, tradearlo si alguien crea un pool, o usarlo como
+> colateral. Para salir del fondo no necesitas redimir — puedes simplemente venderlo."
+
+Opcional si hay tiempo y un segundo wallet: transferencia real del token a otra dirección en
+directo. Es la demostración más contundente de que es transferible de verdad.
+
+**1:55–2:25 — Diferenciador 2: el multiplier**
+
+Señalas la columna "Shares owned".
+
+> "Esto no es tu balance de tokens. Los tokenized stocks de Coinbase usan un multiplier para
+> reflejar dividendos y splits sin cambiar balances. Slate lee ese multiplier y te dice cuántas
+> acciones tienes de verdad. La mayoría de interfaces solo te enseñan el balance raw."
+
+**2:25–2:55 — Diferenciador 3: rebalanceo público**
+
+> "Cuando alguien dispara un rebalanceo, no rebalancea su posición: rebalancea el fondo entero.
+> Somos todos la misma cesta. Y como cada uno tiene un porcentaje, el coste se reparte
+> proporcionalmente — el dashboard te dice exactamente cuál fue el tuyo."
+
+Vas a la tabla de rebalanceos.
+
+> "Cada rebalanceo lo puede disparar cualquiera — no yo, cualquiera — y se lleva una recompensa por
+> el gas. Y cada uno se anuncia onchain con una descripción legible."
+
+Abres BaseScan, enseñas el evento `Announcement` con el texto literal.
+
+> "Esto no lo escribe mi backend. Está en la cadena. Lo puedes leer sin confiar en mí."
+
+**2:55–3:10 — Cierre: el operador no puede tocar los fondos**
+
+> "No hay función de retirada para el operador. No existe. Y siempre puedes salir con redención en
+> especie aunque los oráculos estén caídos y el router roto. Código abierto, link en la
+> descripción."
+
+**Notas de rodaje pendientes** (ver conversación de desarrollo para el detalle):
+
+- El bloque de rebalanceo (2:25–2:55) necesita que el fondo tenga ya un depósito con drift real
+  antes de grabar — un fondo recién depositado, bien repartido según los pesos objetivo, no genera
+  drift por sí solo. Falta decidir cómo se provoca: esperar a que el mercado mueva los precios, o
+  forzarlo con una segunda operación deliberadamente desequilibrada.
+- El cierre (2:55–3:10) menciona `redeemInKind` con "oráculos caídos" — eso no se puede forzar en
+  directo con feeds reales. O se graba durante una ventana real de feeds obsoletos (ahora mismo,
+  p.ej., por el festivo del Labor Day en EE.UU.), o se sustituye por una demo del fork test
+  (`test_redeemInKindWorksPausedAndFullyStale`).
 
 ## Draft submission post
 
