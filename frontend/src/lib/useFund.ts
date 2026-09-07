@@ -5,7 +5,7 @@ import { useReadContract, useReadContracts, usePublicClient } from "wagmi";
 import { useQuery } from "@tanstack/react-query";
 import { parseAbiItem, type Address } from "viem";
 import { slateFundAbi, slateFactoryAbi, erc20Abi } from "./abis";
-import { CONFIGURED_FUNDS, FACTORY_ADDRESS, CHAIN } from "./config";
+import { CONFIGURED_FUNDS, FACTORY_ADDRESS, CHAIN, GENESIS_BLOCK } from "./config";
 import {
   fetchShareTransfers,
   replayForHolder,
@@ -53,7 +53,7 @@ export function useFundList() {
 export function useFundSummary(fund: Address | undefined) {
   const enabled = Boolean(fund);
 
-  const { data, isLoading, refetch } = useReadContracts({
+  const { data, isLoading, error, refetch } = useReadContracts({
     contracts: [
       { address: fund, abi: slateFundAbi, functionName: "SHARE" },
       { address: fund, abi: slateFundAbi, functionName: "totalNAV" },
@@ -84,6 +84,9 @@ export function useFundSummary(fund: Address | undefined) {
 
   return {
     isLoading,
+    // A request-level failure (RPC rate-limited, timed out, etc.) is not the same claim as "no
+    // fund lives here" — the latter is a successful multicall whose per-call results are absent.
+    isRpcError: Boolean(error),
     refetch,
     share,
     totalNAV: data?.[1]?.result as bigint | undefined,
@@ -249,7 +252,7 @@ export function useRebalanceHistory(fund: Address | undefined, share: Address | 
       const logs = await client.getLogs({
         address: fund,
         event: REBALANCED_EVENT,
-        fromBlock: "earliest",
+        fromBlock: GENESIS_BLOCK,
         toBlock: "latest",
       });
 
@@ -260,7 +263,7 @@ export function useRebalanceHistory(fund: Address | undefined, share: Address | 
           const annLogs = await client.getLogs({
             address: share,
             event: ANNOUNCEMENT_EVENT,
-            fromBlock: "earliest",
+            fromBlock: GENESIS_BLOCK,
             toBlock: "latest",
           });
           for (const log of annLogs) {

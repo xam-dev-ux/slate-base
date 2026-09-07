@@ -3,7 +3,7 @@
 import { usePublicClient } from "wagmi";
 import { useQuery } from "@tanstack/react-query";
 import { parseAbiItem, type Address } from "viem";
-import { CHAIN } from "./config";
+import { CHAIN, GENESIS_BLOCK } from "./config";
 import type { Component } from "./useFund";
 
 /// The scheduled setter, and the canonical path for corporate actions. Carries both multipliers
@@ -64,25 +64,30 @@ export function useCorporateActions(components: Component[]) {
     queryFn: async (): Promise<CorporateAction[]> => {
       if (!client) return [];
 
+      // These tokens predate any Slate fund, so a genuinely complete scan would need to start at
+      // their own deployment block, not the factory's. Bounding from GENESIS_BLOCK instead is a
+      // real tradeoff, made acceptable only because no Coinbase Tokenized Stock has rebased yet
+      // (see the module doc above) — there is nothing earlier to miss today. Revisit this if that
+      // stops being true.
       const perToken = await Promise.all(
         components.map(async (component) => {
           const [scheduled, instant, cancelled] = await Promise.all([
             client.getLogs({
               address: component.token,
               event: UI_MULTIPLIER_UPDATED,
-              fromBlock: "earliest",
+              fromBlock: GENESIS_BLOCK,
               toBlock: "latest",
             }),
             client.getLogs({
               address: component.token,
               event: MULTIPLIER_UPDATED,
-              fromBlock: "earliest",
+              fromBlock: GENESIS_BLOCK,
               toBlock: "latest",
             }),
             client.getLogs({
               address: component.token,
               event: UI_MULTIPLIER_CANCELLED,
-              fromBlock: "earliest",
+              fromBlock: GENESIS_BLOCK,
               toBlock: "latest",
             }),
           ]);

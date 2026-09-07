@@ -1,4 +1,5 @@
 import { parseAbiItem, type Address, type PublicClient } from "viem";
+import { GENESIS_BLOCK } from "./config";
 
 export const TRANSFER_EVENT = parseAbiItem(
   "event Transfer(address indexed from, address indexed to, uint256 amount)"
@@ -89,7 +90,7 @@ export async function fetchShareTransfers(client: PublicClient, share: Address) 
   return client.getLogs({
     address: share,
     event: TRANSFER_EVENT,
-    fromBlock: "earliest",
+    fromBlock: GENESIS_BLOCK,
     toBlock: "latest",
   });
 }

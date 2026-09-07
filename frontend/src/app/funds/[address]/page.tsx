@@ -49,8 +49,10 @@ export default function FundPage({ params }: { params: Promise<{ address: string
   }
 
   // A well-formed address that answers none of the fund's calls simply is not a Slate fund —
-  // better to say so than to spin on "Loading…" forever.
-  const notAFund = !summary.isLoading && summary.share === undefined;
+  // better to say so than to spin on "Loading…" forever. But an RPC-level failure (rate limit,
+  // timeout) looks identical to that in the raw data, so it's excluded explicitly rather than
+  // reported as "no fund here".
+  const notAFund = !summary.isLoading && !summary.isRpcError && summary.share === undefined;
   if (notAFund) {
     return (
       <div className="mx-auto max-w-6xl px-6 py-20">
@@ -61,6 +63,26 @@ export default function FundPage({ params }: { params: Promise<{ address: string
           No Slate fund lives at this address on Base mainnet.
         </p>
         <p className="mt-2 font-mono text-xs text-neutral-600">{raw}</p>
+      </div>
+    );
+  }
+
+  if (summary.isRpcError && summary.share === undefined) {
+    return (
+      <div className="mx-auto max-w-6xl px-6 py-20">
+        <Link href="/" className="text-xs text-neutral-500 transition hover:text-neutral-300">
+          ← All funds
+        </Link>
+        <p className="mt-6 text-sm text-neutral-300">
+          Couldn&apos;t reach the RPC to load this fund. This is usually a rate limit on the public
+          endpoint, not a problem with the fund itself.
+        </p>
+        <button
+          onClick={() => summary.refetch()}
+          className="mt-4 rounded-lg border border-white/15 px-4 py-2 text-sm text-neutral-200 transition hover:border-white/30 hover:text-white"
+        >
+          Retry
+        </button>
       </div>
     );
   }
