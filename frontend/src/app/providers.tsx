@@ -26,9 +26,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            // Chainlink feeds and fund state move slowly; avoid hammering the RPC.
-            staleTime: 15_000,
-            refetchInterval: 30_000,
+            // Chainlink feeds and fund state move slowly; avoid hammering the RPC. The public
+            // endpoint rate-limits aggressively (429), so this errs toward less frequent polling
+            // rather than the tightest interval that's merely "correct enough".
+            staleTime: 30_000,
+            refetchInterval: 60_000,
           },
         },
       })

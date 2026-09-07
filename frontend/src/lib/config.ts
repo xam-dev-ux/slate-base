@@ -28,7 +28,15 @@ export const wagmiConfig = createConfig({
     ...(wcProjectId ? [walletConnect({ projectId: wcProjectId })] : []),
   ],
   transports: {
-    [base.id]: http(process.env.NEXT_PUBLIC_RPC_URL ?? "https://mainnet.base.org"),
+    // mainnet.base.org rate-limits aggressively (429) once a page fires more than a handful of
+    // requests close together, which this app routinely does. `batch` folds JSON-RPC calls made in
+    // the same tick into one HTTP request instead of one each; the wider retry spacing gives the
+    // limiter time to reset instead of hammering it again a moment later.
+    [base.id]: http(process.env.NEXT_PUBLIC_RPC_URL ?? "https://mainnet.base.org", {
+      batch: { batchSize: 50, wait: 50 },
+      retryCount: 5,
+      retryDelay: 1_000,
+    }),
   },
   ssr: true,
 });
