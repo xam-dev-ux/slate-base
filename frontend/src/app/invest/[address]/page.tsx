@@ -35,14 +35,19 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
   const [legs, setLegs] = useState<SwapLeg[] | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [isQuoting, setIsQuoting] = useState(false);
-  const [hash, setHash] = useState<`0x${string}` | undefined>();
+  const [approveHash, setApproveHash] = useState<`0x${string}` | undefined>();
+  const [depositHash, setDepositHash] = useState<`0x${string}` | undefined>();
 
   const summary = useFundSummary(isAddress(raw) ? fund : undefined);
   const share = useShareInfo(summary.share);
   const components = useComponents(fund, Number(summary.componentsLength ?? 0n));
 
   const { writeContractAsync, isPending } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+  const { isLoading: isApproveConfirming, isSuccess: isApproveSuccess } =
+    useWaitForTransactionReceipt({ hash: approveHash });
+  const { isLoading: isDepositConfirming, isSuccess: isDepositSuccess } =
+    useWaitForTransactionReceipt({ hash: depositHash });
+  const isConfirming = isApproveConfirming || isDepositConfirming;
 
   const usdcAmount = useMemo(() => parseUsdc(amount), [amount]);
 
@@ -128,7 +133,7 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
       functionName: "approve",
       args: [fund, usdcAmount],
     });
-    setHash(h);
+    setApproveHash(h);
     await refetchAllowance();
   }
 
@@ -148,7 +153,7 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
       functionName: "deposit",
       args: [usdcAmount, sellAmounts, calldata],
     });
-    setHash(h);
+    setDepositHash(h);
   }
 
   if (!isAddress(raw)) {
@@ -281,15 +286,21 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
           )}
         </div>
 
-        {quoteError && (
-          <p className="mt-4 text-xs leading-relaxed text-amber-400">
-            {quoteError.includes("ZEROX_API_KEY")
-              ? "Swap quotes need a 0x API key configured on the server (ZEROX_API_KEY). Without it, deposits cannot build their swap legs."
-              : quoteError}
+        {!needsApproval && !legs && usdcAmount > 0n && !isQuoting && (
+          <p className="mt-3 text-xs text-neutral-500">
+            Get a quote above first — the deposit needs the swap legs it produces.
           </p>
         )}
 
-        {isSuccess && (
+        {quoteError && <p className="mt-4 text-xs leading-relaxed text-amber-400">{quoteError}</p>}
+
+        {isApproveSuccess && !depositHash && (
+          <p className="mt-4 text-sm text-emerald-400">
+            USDC approved. Get a quote, then deposit below.
+          </p>
+        )}
+
+        {isDepositSuccess && (
           <p className="mt-4 text-sm text-emerald-400">
             Deposit confirmed.{" "}
             <Link href="/portfolio" className="underline">
