@@ -36,7 +36,8 @@ contract SlateFundForkTest is Test {
     address internal constant METAC_FEED = 0x6526aE6797A76123638b863AeE4dD27Ba4E4b27D;
     address internal constant GOOGLC_FEED = 0x5bF49E0ffA937CE2FfF033c739aD7C634c4D34F2;
 
-    // Aerodrome Slipstream pools — used only as a source of real tokens for seeding.
+    // Aerodrome Slipstream pools — a source of real tokens for seeding, and the TWAP fallback
+    // backing each component (see test_fork_twapFallback below).
     address internal constant NVDAC_POOL = 0x853F5f1B92b16714Fe6CDA67CAad0856B83C7ab9;
     address internal constant AAPLC_POOL = 0xA3b1E3f9747065e2073722Ff4c9027d3eA4994F0;
     address internal constant METAC_POOL = 0xEAF57753BC382E0324a1D43F72E7027705a2273E;
@@ -51,10 +52,14 @@ contract SlateFundForkTest is Test {
         vm.createSelectFork(vm.envOr("MAINNET_RPC_URL", string("https://mainnet.base.org")), FORK_BLOCK);
 
         SlateFund.ComponentInput[] memory comps = new SlateFund.ComponentInput[](4);
-        comps[0] = SlateFund.ComponentInput({token: NVDAC, feed: NVDAC_FEED, targetWeightBps: 2_500});
-        comps[1] = SlateFund.ComponentInput({token: AAPLC, feed: AAPLC_FEED, targetWeightBps: 2_500});
-        comps[2] = SlateFund.ComponentInput({token: METAC, feed: METAC_FEED, targetWeightBps: 2_500});
-        comps[3] = SlateFund.ComponentInput({token: GOOGLC, feed: GOOGLC_FEED, targetWeightBps: 2_500});
+        comps[0] =
+            SlateFund.ComponentInput({token: NVDAC, feed: NVDAC_FEED, targetWeightBps: 2_500, pool: NVDAC_POOL});
+        comps[1] =
+            SlateFund.ComponentInput({token: AAPLC, feed: AAPLC_FEED, targetWeightBps: 2_500, pool: AAPLC_POOL});
+        comps[2] =
+            SlateFund.ComponentInput({token: METAC, feed: METAC_FEED, targetWeightBps: 2_500, pool: METAC_POOL});
+        comps[3] =
+            SlateFund.ComponentInput({token: GOOGLC, feed: GOOGLC_FEED, targetWeightBps: 2_500, pool: GOOGLC_POOL});
 
         fund = new SlateFund(
             keccak256("slate.fork.test"),
@@ -187,6 +192,30 @@ contract SlateFundForkTest is Test {
 
         vm.expectRevert();
         fund.totalNAV();
+    }
+
+    /// @dev Same stale-past-73h scenario as above, but with the TWAP fallback opted into — proves
+    ///      it's genuinely off by default (the previous test already established that reverts) and
+    ///      that turning it on recovers a real, sane price from the pool's own oracle rather than
+    ///      the fund just staying frozen.
+    function test_fork_navUsesTwapWhenFallbackEnabled() public {
+        _seedFund(1e8);
+        uint256 navBeforeStale = fund.totalNAV();
+
+        vm.warp(block.timestamp + 73 hours);
+        vm.expectRevert();
+        fund.totalNAV();
+
+        fund.setTwapFallbackEnabled(true);
+
+        uint256 navAfter = fund.totalNAV();
+        assertGt(navAfter, 0, "TWAP fallback should produce a positive NAV");
+
+        // The pool's own state is exactly as pinned (only block.timestamp moved), so the TWAP
+        // reflects the same liquidity distribution as before the warp — sanity-bound against the
+        // pre-stale NAV rather than asserting exact equality, since it's a genuinely different
+        // pricing source (pool TWAP vs Chainlink spot).
+        assertApproxEqRel(navAfter, navBeforeStale, 0.05e18, "TWAP-derived NAV within 5% of oracle NAV");
     }
 
     /*//////////////////////////////////////////////////////////////

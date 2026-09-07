@@ -7,6 +7,7 @@ import {IB20} from "base-std/interfaces/IB20.sol";
 import {IB20Asset} from "base-std/interfaces/IB20Asset.sol";
 import {IB20Factory} from "base-std/interfaces/IB20Factory.sol";
 import {StdPrecompiles} from "base-std/StdPrecompiles.sol";
+import {TwapOracle} from "./libraries/TwapOracle.sol";
 
 interface IAggregatorV3 {
     function latestRoundData()
@@ -33,6 +34,10 @@ contract SlateFund {
         address token;
         address feed;
         uint16 targetWeightBps;
+        /// @notice Aerodrome Slipstream pool (component/USDC) backing the TWAP fallback below.
+        ///         address(0) if none is configured — that component simply has no fallback and
+        ///         still reverts on a stale feed regardless of `twapFallbackEnabled`.
+        address pool;
     }
 
     /// @notice Stored component definition, decimals cached at construction (immutable per B20/
@@ -43,6 +48,7 @@ contract SlateFund {
         uint16 targetWeightBps;
         uint8 tokenDecimals;
         uint8 feedDecimals;
+        address pool;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -75,6 +81,21 @@ contract SlateFund {
     ///         a three-day-old price as the reference for "is this trade fair" would let a caller
     ///         trade against a stale mark at everyone else's expense.
     uint32 public swapPriceMaxAge = 1 hours;
+
+    /// @notice Off by default — a fresh deploy behaves exactly like a fund with no fallback at all.
+    ///         When the operator turns this on, a stale Chainlink feed no longer hard-blocks
+    ///         pricing/swaps for a component with a configured pool: the fund instead prices that
+    ///         component off the pool's own TWAP (see `libraries/TwapOracle.sol`), trading some
+    ///         manipulation resistance (a real time-weighted average, not spot) for availability
+    ///         during a genuine multi-day oracle gap. This is a real security tradeoff, not a
+    ///         convenience toggle — it exists because Base/Aerodrome keep these markets liquid
+    ///         24/7 even when Chainlink hasn't updated, so "no fresh oracle" and "no fair price
+    ///         available" are not actually the same condition here.
+    bool public twapFallbackEnabled;
+    /// @notice TWAP averaging window, bounded so it can't be shrunk to something a flash-loan-sized
+    ///         trade could meaningfully move, nor widened so far it stops reflecting anything
+    ///         recent.
+    uint32 public twapWindow = 30 minutes;
 
     uint64 public lastRebalanceAt;
     uint256 public rebalanceCount;
@@ -217,7 +238,8 @@ contract SlateFund {
                     feed: ci.feed,
                     targetWeightBps: ci.targetWeightBps,
                     tokenDecimals: tokenDecimals,
-                    feedDecimals: feedDecimals
+                    feedDecimals: feedDecimals,
+                    pool: ci.pool
                 })
             );
         }
@@ -637,6 +659,19 @@ contract SlateFund {
         swapPriceMaxAge = s;
     }
 
+    /// @notice Flips the TWAP fallback described where `twapFallbackEnabled` is declared. Anyone
+    ///         can read the current state; only the operator can change it.
+    function setTwapFallbackEnabled(bool enabled) external onlyOperator {
+        emit ParamsUpdated("twapFallbackEnabled", twapFallbackEnabled ? 1 : 0, enabled ? 1 : 0);
+        twapFallbackEnabled = enabled;
+    }
+
+    function setTwapWindow(uint32 w) external onlyOperator {
+        if (w < 10 minutes || w > 2 hours) revert OutOfBounds();
+        emit ParamsUpdated("twapWindow", twapWindow, w);
+        twapWindow = w;
+    }
+
     /// @notice Caps are the only compensating control on an unaudited contract, so they are bounded
     ///         like every other parameter rather than settable to anything.
     function setCaps(uint256 perWallet, uint256 fundValue) external onlyOperator {
@@ -693,10 +728,18 @@ contract SlateFund {
 
     function _priceWithMaxAge(Component memory c, uint256 maxAge) internal view returns (uint256 answer) {
         (, int256 a,, uint256 updatedAt,) = IAggregatorV3(c.feed).latestRoundData();
-        if (block.timestamp - updatedAt > maxAge) revert StaleFeed(c.feed, updatedAt);
-        if (a <= 0) revert StaleFeed(c.feed, updatedAt);
-        // forge-lint: disable-next-line(unsafe-typecast)
-        answer = uint256(a);
+        bool fresh = a > 0 && block.timestamp - updatedAt <= maxAge;
+        if (fresh) {
+            // forge-lint: disable-next-line(unsafe-typecast)
+            return uint256(a);
+        }
+        // Falls back only if the operator opted in and this component has a pool configured —
+        // both conditions default closed, so an unconfigured deploy reverts exactly as it always
+        // has. See where `twapFallbackEnabled` is declared for what this trades away.
+        if (twapFallbackEnabled && c.pool != address(0)) {
+            return TwapOracle.twapAnswer(c.pool, twapWindow, c.tokenDecimals, c.feedDecimals);
+        }
+        revert StaleFeed(c.feed, updatedAt);
     }
 
     function _componentValue(uint256 index) internal view returns (uint256) {

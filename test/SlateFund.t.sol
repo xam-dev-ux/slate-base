@@ -41,8 +41,8 @@ contract SlateFundTest is Test {
         router = new MockRouter();
 
         SlateFund.ComponentInput[] memory comps = new SlateFund.ComponentInput[](2);
-        comps[0] = SlateFund.ComponentInput({token: address(tokenA), feed: address(feedA), targetWeightBps: 5_000});
-        comps[1] = SlateFund.ComponentInput({token: address(tokenB), feed: address(feedB), targetWeightBps: 5_000});
+        comps[0] = SlateFund.ComponentInput({token: address(tokenA), feed: address(feedA), targetWeightBps: 5_000, pool: address(0)});
+        comps[1] = SlateFund.ComponentInput({token: address(tokenB), feed: address(feedB), targetWeightBps: 5_000, pool: address(0)});
 
         fund = new SlateFund(
             bytes32(uint256(4)),
@@ -854,8 +854,8 @@ contract SlateFundTest is Test {
     ///      letting a half-supply holder extract three quarters of it.
     function test_duplicateComponentIsRejectedAtConstruction() public {
         SlateFund.ComponentInput[] memory comps = new SlateFund.ComponentInput[](2);
-        comps[0] = SlateFund.ComponentInput({token: address(tokenA), feed: address(feedA), targetWeightBps: 5_000});
-        comps[1] = SlateFund.ComponentInput({token: address(tokenA), feed: address(feedA), targetWeightBps: 5_000});
+        comps[0] = SlateFund.ComponentInput({token: address(tokenA), feed: address(feedA), targetWeightBps: 5_000, pool: address(0)});
+        comps[1] = SlateFund.ComponentInput({token: address(tokenA), feed: address(feedA), targetWeightBps: 5_000, pool: address(0)});
 
         vm.expectRevert(abi.encodeWithSelector(SlateFund.DuplicateComponent.selector, address(tokenA)));
         new SlateFund(
@@ -995,7 +995,7 @@ contract SlateFundTest is Test {
         MockReentrantRouter evil = new MockReentrantRouter();
 
         SlateFund.ComponentInput[] memory comps = new SlateFund.ComponentInput[](1);
-        comps[0] = SlateFund.ComponentInput({token: address(tokenA), feed: address(feedA), targetWeightBps: 10_000});
+        comps[0] = SlateFund.ComponentInput({token: address(tokenA), feed: address(feedA), targetWeightBps: 10_000, pool: address(0)});
         SlateFund evilFund = new SlateFund(
             bytes32(uint256(98)),
             "Reentrancy Probe Two",
@@ -1048,7 +1048,7 @@ contract SlateFundTest is Test {
         MockReentrantRouter evil = new MockReentrantRouter();
 
         SlateFund.ComponentInput[] memory comps = new SlateFund.ComponentInput[](1);
-        comps[0] = SlateFund.ComponentInput({token: address(tokenA), feed: address(feedA), targetWeightBps: 10_000});
+        comps[0] = SlateFund.ComponentInput({token: address(tokenA), feed: address(feedA), targetWeightBps: 10_000, pool: address(0)});
         SlateFund evilFund = new SlateFund(
             bytes32(uint256(99)),
             "Reentrancy Probe",

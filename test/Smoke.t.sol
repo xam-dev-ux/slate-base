@@ -15,7 +15,7 @@ contract SmokeTest is Test {
         MockAggregator feed = new MockAggregator(8, 20000000000); // $200.00000000
 
         SlateFund.ComponentInput[] memory components = new SlateFund.ComponentInput[](1);
-        components[0] = SlateFund.ComponentInput({token: address(nvda), feed: address(feed), targetWeightBps: 10_000});
+        components[0] = SlateFund.ComponentInput({token: address(nvda), feed: address(feed), targetWeightBps: 10_000, pool: address(0)});
 
         SlateFund fund = new SlateFund(
             bytes32(uint256(3)),

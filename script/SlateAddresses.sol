@@ -38,6 +38,15 @@ library SlateAddresses {
     address internal constant METAC_FEED = 0x6526aE6797A76123638b863AeE4dD27Ba4E4b27D;
     address internal constant GOOGLC_FEED = 0x5bF49E0ffA937CE2FfF033c739aD7C634c4D34F2;
 
+    /// @notice Aerodrome Slipstream pools (component/USDC, tickSpacing 10), the same ones measured
+    ///         in docs/research-phase0.md — token0 is USDC on every one, confirmed on-chain. Back
+    ///         the TWAP fallback (`SlateFund.twapFallbackEnabled`), off by default; verified against
+    ///         real pool state to land within ~1% of Chainlink's own price for all four.
+    address internal constant NVDAC_POOL = 0x853F5f1B92b16714Fe6CDA67CAad0856B83C7ab9;
+    address internal constant AAPLC_POOL = 0xA3b1E3f9747065e2073722Ff4c9027d3eA4994F0;
+    address internal constant METAC_POOL = 0xEAF57753BC382E0324a1D43F72E7027705a2273E;
+    address internal constant GOOGLC_POOL = 0xB1987CAD1682841b4b641d50E520777eC5Ab5542;
+
     /*//////////////////////////////////////////////////////////////
                                 BASKETS
     //////////////////////////////////////////////////////////////*/
@@ -45,18 +54,25 @@ library SlateAddresses {
     /// @notice Slate Big Tech 4 — equal weight across all four liquid components.
     function bigTech4() internal pure returns (SlateFund.ComponentInput[] memory comps) {
         comps = new SlateFund.ComponentInput[](4);
-        comps[0] = SlateFund.ComponentInput({token: NVDAC, feed: NVDAC_FEED, targetWeightBps: 2_500});
-        comps[1] = SlateFund.ComponentInput({token: AAPLC, feed: AAPLC_FEED, targetWeightBps: 2_500});
-        comps[2] = SlateFund.ComponentInput({token: METAC, feed: METAC_FEED, targetWeightBps: 2_500});
-        comps[3] = SlateFund.ComponentInput({token: GOOGLC, feed: GOOGLC_FEED, targetWeightBps: 2_500});
+        comps[0] =
+            SlateFund.ComponentInput({token: NVDAC, feed: NVDAC_FEED, targetWeightBps: 2_500, pool: NVDAC_POOL});
+        comps[1] =
+            SlateFund.ComponentInput({token: AAPLC, feed: AAPLC_FEED, targetWeightBps: 2_500, pool: AAPLC_POOL});
+        comps[2] =
+            SlateFund.ComponentInput({token: METAC, feed: METAC_FEED, targetWeightBps: 2_500, pool: METAC_POOL});
+        comps[3] =
+            SlateFund.ComponentInput({token: GOOGLC, feed: GOOGLC_FEED, targetWeightBps: 2_500, pool: GOOGLC_POOL});
     }
 
     /// @notice Slate AI Core — concentrated toward AI infrastructure and applications.
     function aiCore() internal pure returns (SlateFund.ComponentInput[] memory comps) {
         comps = new SlateFund.ComponentInput[](3);
-        comps[0] = SlateFund.ComponentInput({token: NVDAC, feed: NVDAC_FEED, targetWeightBps: 4_000});
-        comps[1] = SlateFund.ComponentInput({token: GOOGLC, feed: GOOGLC_FEED, targetWeightBps: 3_000});
-        comps[2] = SlateFund.ComponentInput({token: METAC, feed: METAC_FEED, targetWeightBps: 3_000});
+        comps[0] =
+            SlateFund.ComponentInput({token: NVDAC, feed: NVDAC_FEED, targetWeightBps: 4_000, pool: NVDAC_POOL});
+        comps[1] =
+            SlateFund.ComponentInput({token: GOOGLC, feed: GOOGLC_FEED, targetWeightBps: 3_000, pool: GOOGLC_POOL});
+        comps[2] =
+            SlateFund.ComponentInput({token: METAC, feed: METAC_FEED, targetWeightBps: 3_000, pool: METAC_POOL});
     }
 
     string internal constant BIG_TECH_4_RULE =
