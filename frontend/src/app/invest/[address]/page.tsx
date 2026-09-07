@@ -48,6 +48,12 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
     functionName: "swapPriceMaxAge",
     query: { enabled: isAddress(raw) },
   });
+  const { data: twapFallbackEnabled } = useReadContract({
+    address: fund,
+    abi: slateFundAbi,
+    functionName: "twapFallbackEnabled",
+    query: { enabled: isAddress(raw) },
+  });
 
   // NAV pricing tolerates a feed up to feedStalenessTolerance old (72h by default); the swap this
   // deposit executes is judged against a much tighter swapPriceMaxAge (1h by default), on purpose —
@@ -61,7 +67,15 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
   // than silently judge freshness against the wrong, looser number. This is what let a deposit
   // through the exact way it wasn't supposed to: a feed already past the real 1h swap bound but
   // still within the 72h NAV one read as "fine" while swapPriceMaxAge hadn't resolved yet.
-  const swapPricingStale = swapPriceMaxAge === undefined || swapFeeds.some((f) => f.isStale);
+  //
+  // But a stale feed stops mattering once the operator has turned the TWAP fallback on — the
+  // contract itself will price that leg off the pool instead of reverting, so gating on Chainlink
+  // freshness alone would block a deposit the fund would actually accept. Every component this
+  // factory deploys has a pool configured, so "fallback enabled" is read as "covered" here rather
+  // than checking per-component (there's no per-component pool data on the frontend's Component
+  // type to check against anyway).
+  const swapPricingStale =
+    !twapFallbackEnabled && (swapPriceMaxAge === undefined || swapFeeds.some((f) => f.isStale));
 
   const { writeContractAsync, isPending } = useWriteContract();
   const { isLoading: isApproveConfirming, isSuccess: isApproveSuccess } =
@@ -198,7 +212,11 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
         Invest in {share.name ?? "…"}
       </h1>
 
-      {(summary.navUnavailable || summary.feedsHealthy === false) && (
+      {/* navUnavailable alone — see the same note on the fund page. feedsHealthy() stays false the
+          whole time Chainlink is stale regardless of the TWAP fallback, so gating this "paused"
+          banner on it too would keep claiming deposits are blocked on a fund the fallback has
+          working fine. */}
+      {summary.navUnavailable && (
         <div className="mt-6">
           <StaleFeedBanner staleFeed={summary.staleFeed} />
         </div>

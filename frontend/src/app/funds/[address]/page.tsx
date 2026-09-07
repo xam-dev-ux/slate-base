@@ -163,7 +163,13 @@ export default function FundPage({ params }: { params: Promise<{ address: string
         </dl>
       </header>
 
-      {(summary.navUnavailable || summary.feedsHealthy === false) && (
+      {/* navUnavailable alone, not feedsHealthy — feedsHealthy() honestly reports raw Chainlink
+          health regardless of the TWAP fallback, so it stays false the whole time a feed is stale
+          even once the fallback has NAV and swaps working fine. Gating this "everything is paused"
+          banner on it too would keep telling a fallback-covered fund's visitors that deposits are
+          blocked and will "resume when the feeds update", which stops being true the moment the
+          fallback kicks in. */}
+      {summary.navUnavailable && (
         <div className="mt-6">
           <StaleFeedBanner staleFeed={summary.staleFeed} />
         </div>

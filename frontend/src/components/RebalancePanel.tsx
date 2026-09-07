@@ -80,15 +80,23 @@ export function RebalancePanel({
     abi: slateFundAbi,
     functionName: "swapPriceMaxAge",
   });
+  const { data: twapFallbackEnabled } = useReadContract({
+    address: fund,
+    abi: slateFundAbi,
+    functionName: "twapFallbackEnabled",
+  });
 
   // Rebalance legs are judged against swapPriceMaxAge (1h by default), much tighter than the
   // feedStalenessTolerance (72h) `totalNAV()`/`pricingUnavailable` above tolerate — see the same
   // note on the invest page. `isStale` here reflects that tighter bound, not the NAV one. Fail
   // safe while swapPriceMaxAge hasn't loaded yet, rather than falling back to useFeedHealth's
   // lenient default tolerance — the same gap that let a deposit through on a feed already past
-  // the real bound.
+  // the real bound. Once the operator has enabled the TWAP fallback, though, a stale Chainlink
+  // feed no longer means the leg will revert — every component this factory deploys has a pool
+  // configured, so treat "fallback enabled" as "covered" rather than blocking on Chainlink alone.
   const feeds = useFeedHealth(components, swapPriceMaxAge as bigint | undefined);
-  const swapPricingStale = swapPriceMaxAge === undefined || feeds.some((f) => f.isStale);
+  const swapPricingStale =
+    !twapFallbackEnabled && (swapPriceMaxAge === undefined || feeds.some((f) => f.isStale));
 
   const reward =
     totalNAV !== undefined && callerRewardBps !== undefined
