@@ -95,8 +95,12 @@ const client = createPublicClient({
   // transient 429 instead of riding it out.
   transport: http(process.env.NEXT_PUBLIC_RPC_URL ?? "https://mainnet.base.org", {
     batch: { batchSize: 50, wait: 50 },
-    retryCount: 3,
-    retryDelay: 750,
+    // Four legs quoted in parallel (below) hit the public RPC's rate limit more often than a
+    // single call would even with the batching above, since Promise.all still issues the calls
+    // as fast as they resolve into the batch window — bumped retries higher than the client
+    // transport's to actually ride out a 429 instead of surfacing it after one failed attempt.
+    retryCount: 5,
+    retryDelay: 1000,
   }),
 });
 

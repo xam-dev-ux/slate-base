@@ -67,8 +67,24 @@ async function fetchQuoteLegs(params: {
   });
 
   if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(detail || "Quote request failed");
+    const body = await res.text();
+    // The route replies with {"error": "..."} — that "..." is often a raw viem RPC error dump
+    // (a whole JSON-RPC request/response pair) when the public RPC rate-limits a quote, which
+    // is uninformative and alarming shown verbatim. Surface a plain message instead and keep the
+    // raw detail only for anyone reading devtools.
+    let message = "Quote request failed";
+    try {
+      const parsed = JSON.parse(body) as { error?: string };
+      if (parsed.error?.toLowerCase().includes("rate limit")) {
+        message = "The public RPC is rate-limited right now. Try Get quote again in a moment.";
+      } else if (parsed.error) {
+        message = parsed.error.split("\n")[0];
+      }
+    } catch {
+      // body wasn't JSON — fall through to the generic message.
+    }
+    console.error("Quote request failed:", body);
+    throw new Error(message);
   }
 
   const json = (await res.json()) as {

@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useMemo, useState } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { isAddress, parseUnits, type Address } from "viem";
 import {
@@ -110,6 +110,17 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
     query: { enabled: Boolean(user && summary.share) },
   });
 
+  // writeContractAsync resolves once the approve tx is submitted, not once it's mined — calling
+  // refetchAllowance right after that (as approve() used to) reads the allowance before the
+  // approval actually lands onchain, so it still sees the old, too-low value and needsApproval
+  // never flips. Refetching once the receipt confirms is what a wallet's own "wait for approval"
+  // spinner is showing while it happens.
+  useEffect(() => {
+    if (isApproveSuccess) {
+      refetchAllowance();
+    }
+  }, [isApproveSuccess, refetchAllowance]);
+
   // Split the deposit by target weight — the fund validates each leg against Chainlink regardless.
   const plannedLegs = useMemo(
     () =>
@@ -169,7 +180,6 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
       args: [fund, usdcAmount],
     });
     setApproveHash(h);
-    await refetchAllowance();
   }
 
   async function deposit() {
