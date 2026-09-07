@@ -19,7 +19,12 @@ function PositionRow({ fund, user }: { fund: Address; user: Address }) {
   const summary = useFundSummary(fund);
   const share = useShareInfo(summary.share);
 
-  const { data: shares } = useReadContract({
+  const {
+    data: shares,
+    isLoading: sharesLoading,
+    isError: sharesError,
+    refetch: refetchShares,
+  } = useReadContract({
     address: summary.share,
     abi: erc20Abi,
     functionName: "balanceOf",
@@ -35,6 +40,28 @@ function PositionRow({ fund, user }: { fund: Address; user: Address }) {
   });
 
   const balance = shares as bigint | undefined;
+
+  // A failed or still-in-flight read looks identical to "you hold nothing" here unless kept
+  // apart explicitly — on a page whose whole job is telling someone whether they have a position,
+  // silently rendering nothing on an RPC hiccup reads as "you have no position", not as "we
+  // couldn't check". Only a resolved, genuine zero balance hides the row.
+  if (summary.share && (sharesLoading || sharesError)) {
+    return (
+      <div className="flex items-center justify-between gap-4 rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-5 text-sm text-neutral-500">
+        <span>{sharesError ? "Couldn't check your position." : "Checking your position…"}</span>
+        {sharesError && (
+          <button
+            type="button"
+            onClick={() => refetchShares()}
+            className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-neutral-300 transition hover:border-white/30 hover:text-white"
+          >
+            Retry
+          </button>
+        )}
+      </div>
+    );
+  }
+
   if (!balance || balance === 0n) return null;
 
   const fraction =
