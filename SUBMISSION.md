@@ -227,17 +227,18 @@ All on Base mainnet (chain 8453). Fill in after deployment.
 
 | Contract | Address | BaseScan |
 |---|---|---|
-| `SlateFactory` | `0x1499101084A5220a31AeE1B55eAAf0d2aF866A6F` | [Verified](https://basescan.org/address/0x1499101084a5220a31aee1b55eaaf0d2af866a6f) |
-| Slate Big Tech 4 (`SLATE4`) | `0xc98010A2a990DD9B8341E237eaF1E85063f01a99` | [Verified](https://basescan.org/address/0xc98010a2a990dd9b8341e237eaf1e85063f01a99) |
-| └ share token | `0xb200000000000000000000586D8Cf1beA3507a32` | [BaseScan](https://basescan.org/address/0xb200000000000000000000586d8cf1bea3507a32) |
-| Slate AI Core (`SLATEAI`) | `0x38bfE2cb0B98a1E7B0046da668Edbea39288ff6B` | [Verified](https://basescan.org/address/0x38bfe2cb0b98a1e7b0046da668edbea39288ff6b) |
-| └ share token | `0xB2000000000000000000001Edc48B0F3068304E2` | [BaseScan](https://basescan.org/address/0xb2000000000000000000001edc48b0f3068304e2) |
+| `SlateFactory` | `0xa9887a02E3a3a94caF41f7A845D0f5020C5DBA01` | [Verified](https://basescan.org/address/0xa9887a02e3a3a94caf41f7a845d0f5020c5dba01) |
+| Slate Big Tech 4 (`SLATE4`) | `0x8Cdec1a9618838b2A92C58D0309992E9C7C2B5F4` | [Verified](https://basescan.org/address/0x8cdec1a9618838b2a92c58d0309992e9c7c2b5f4) |
+| └ share token | `0xb20000000000000000000033721bf91fa778B8fc` | [BaseScan](https://basescan.org/address/0xb20000000000000000000033721bf91fa778b8fc) |
+| Slate AI Core (`SLATEAI`) | `0xbaFA2FD9FDb4E2877428bEe0f885Ff21a9d2a8dA` | [Verified](https://basescan.org/address/0xbafa2fd9fdb4e2877428bee0f885ff21a9d2a8da) |
+| └ share token | `0xb200000000000000000000B9CF698EC09aBcA418` | [BaseScan](https://basescan.org/address/0xb200000000000000000000b9cf698ec09abca418) |
 
-Superseded a first deploy (`0xBa9b1EE4...`, `0x4ab61530...`, `0x89Aa9Ac2...`) built with 0x's
-AllowanceHolder as the swap router: 0x's API rejects every Coinbase Tokenized Stock with
-`BUY_TOKEN_NOT_AUTHORIZED_FOR_TRADE`, a compliance restriction on their side. This deploy routes
-swaps directly through Aerodrome Slipstream instead (see `script/SlateAddresses.sol`). The
-abandoned contracts hold no deposits and are otherwise harmless.
+Second redeploy. The first (`0xBa9b1EE4...`) used 0x's AllowanceHolder as the swap router — 0x's
+API rejects every Coinbase Tokenized Stock with `BUY_TOKEN_NOT_AUTHORIZED_FOR_TRADE`, a compliance
+restriction on their side — and was replaced by a deploy routing through Aerodrome Slipstream
+(`0x1499101...`). This one adds an optional TWAP fallback for when Chainlink itself goes stale (off
+by default; see "Pricing mode" on each fund page and `src/SlateFund.sol`'s
+`twapFallbackEnabled`). All abandoned contracts held no deposits and are otherwise harmless.
 
 ### Basket composition
 
@@ -260,8 +261,8 @@ pool anywhere on Base.
 
 | What | Tx | Notes |
 |---|---|---|
-| Factory deploy | [`0xc1e093c357085f1b54c40e533632bbaed83b7daf1fa85dba0c1a877f677b1ce7`](https://basescan.org/tx/0xc1e093c357085f1b54c40e533632bbaed83b7daf1fa85dba0c1a877f677b1ce7) | Block 50984267, paid 0.0000224 ETH |
-| Fund deploys | [`0x4e9c7ef69d1c7e6fa613644c4b920e337d3148eb78fa1c683a97ff08b769bef7`](https://basescan.org/tx/0x4e9c7ef69d1c7e6fa613644c4b920e337d3148eb78fa1c683a97ff08b769bef7) (Big Tech 4), [`0xe2c95f35fe547b60d72121cce11935f91c5baa4d475b1c1a710d6590a0cb7f50`](https://basescan.org/tx/0xe2c95f35fe547b60d72121cce11935f91c5baa4d475b1c1a710d6590a0cb7f50) (AI Core) | Block 50984316, paid 0.0000424 ETH total |
+| Factory deploy | [`0x65551ac69a072be8f877a88f315aeb40029b8c4280bb0a3234945a186259d201`](https://basescan.org/tx/0x65551ac69a072be8f877a88f315aeb40029b8c4280bb0a3234945a186259d201) | Block 51010221, paid 0.0000258 ETH |
+| Fund deploys | [`0x980e11e2de2d7a048b991189f52ae1097c94bd345eefaee00bb53afe3ab20076`](https://basescan.org/tx/0x980e11e2de2d7a048b991189f52ae1097c94bd345eefaee00bb53afe3ab20076) (Big Tech 4), [`0x523d2a7b8a7926fdc8e14cab04bc3754ede0f6cfb0330cd98b6598e0c7916bde`](https://basescan.org/tx/0x523d2a7b8a7926fdc8e14cab04bc3754ede0f6cfb0330cd98b6598e0c7916bde) (AI Core) | Block 51010270, paid 0.0000481 ETH total |
 | Real deposit (second wallet) | TODO | |
 | Real rebalance | TODO | Record how drift was achieved |
 | `announce()` on that rebalance | TODO | The description visible on BaseScan |
