@@ -12,6 +12,9 @@ export const metadata: Metadata = {
   title: "Slate — Index funds for Coinbase Tokenized Stocks",
   description:
     "Deposit USDC, hold a basket of Coinbase Tokenized Stocks on Base. Every rebalance is public, onchain, and permissionless.",
+  other: {
+    "base:app_id": "69ada63536e1b05c113ad778",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
