@@ -268,77 +268,77 @@ pool anywhere on Base.
 
 ## Demo video script — Loom (~3:10)
 
-**0:00–0:20 — El problema**
+**0:00–0:20 — The problem**
 
-> "Coinbase ha traído 13 acciones tokenizadas a Base. Si quieres exposición diversificada hoy
-> tienes que hacer varios swaps manuales y rebalancear a mano cuando los pesos se desvían. Eso no
-> escala, y nadie audita si lo has hecho bien."
+> "Coinbase has brought 13 tokenized stocks to Base. If you want diversified exposure today, you
+> have to do several manual swaps and rebalance by hand whenever the weights drift. That doesn't
+> scale, and nobody audits whether you did it right."
 
-**0:20–0:50 — La solución en pantalla**
+**0:20–0:50 — The solution, on screen**
 
-Abres el sitio. Muestras los fondos. Entras en Slate Big Tech 4. Enseñas la tabla de composición:
-tickers, peso objetivo, peso actual, barra de deriva.
+Open the site. Show the funds. Go into Slate Big Tech 4. Walk the composition table: tickers,
+target weight, current weight, drift bar.
 
-**0:50–1:30 — Depósito real en mainnet**
+**0:50–1:30 — A real mainnet deposit**
 
-Conectas wallet. Metes una cantidad pequeña de USDC. Muestras la preview con el desglose por
-componente. Firmas approve + deposit. Enseñas la posición apareciendo.
+Connect wallet. Enter a small amount of USDC. Show the preview with the per-component split. Sign
+approve + deposit. Show the position landing.
 
-> "Fíjate que no me han llegado cuatro tokens al wallet. Me ha llegado uno: SLATE4. Ese token
-> representa mi trozo de una cesta común que compartimos todos los que hemos depositado."
+> "Notice I didn't get four tokens in my wallet. I got one: SLATE4. That token represents my slice
+> of a shared basket that everyone who has deposited holds together."
 
-Esto tiene que ser una transacción real en mainnet. Si es un mock, se nota.
+This has to be a real mainnet transaction. If it's a mock, it shows.
 
-**1:30–1:55 — Diferenciador 1: la participación es un token**
+**1:30–1:55 — Differentiator 1: the position is a real token**
 
-Abres el wallet, muestras el token SLATE4 en el balance.
+Open the wallet, show the SLATE4 token in the balance.
 
-> "Lo que tienes no es un apunte en mi base de datos. Es un token B20 estándar, totalmente
-> transferible. Puedes mandárselo a alguien, tradearlo si alguien crea un pool, o usarlo como
-> colateral. Para salir del fondo no necesitas redimir — puedes simplemente venderlo."
+> "What you're holding isn't a row in my database. It's a standard B20 token, fully transferable.
+> You can send it to someone, trade it if anyone creates a pool, or use it as collateral. To exit
+> the fund you don't need to redeem — you can just sell it."
 
-Opcional si hay tiempo y un segundo wallet: transferencia real del token a otra dirección en
-directo. Es la demostración más contundente de que es transferible de verdad.
+Optional, if there's time and a second wallet: a real transfer of the token to another address,
+live. It's the most convincing demonstration that it's genuinely transferable.
 
-**1:55–2:25 — Diferenciador 2: el multiplier**
+**1:55–2:25 — Differentiator 2: the multiplier**
 
-Señalas la columna "Shares owned".
+Point at the "Shares owned" column.
 
-> "Esto no es tu balance de tokens. Los tokenized stocks de Coinbase usan un multiplier para
-> reflejar dividendos y splits sin cambiar balances. Slate lee ese multiplier y te dice cuántas
-> acciones tienes de verdad. La mayoría de interfaces solo te enseñan el balance raw."
+> "This isn't your token balance. Coinbase's tokenized stocks use a multiplier to reflect dividends
+> and splits without changing balances. Slate reads that multiplier and tells you how many shares
+> you actually own. Most interfaces only show you the raw balance."
 
-**2:25–2:55 — Diferenciador 3: rebalanceo público**
+**2:25–2:55 — Differentiator 3: public rebalancing**
 
-> "Cuando alguien dispara un rebalanceo, no rebalancea su posición: rebalancea el fondo entero.
-> Somos todos la misma cesta. Y como cada uno tiene un porcentaje, el coste se reparte
-> proporcionalmente — el dashboard te dice exactamente cuál fue el tuyo."
+> "When someone triggers a rebalance, they're not rebalancing their own position — they're
+> rebalancing the entire fund. We're all the same basket. And since everyone holds a percentage of
+> it, the cost is split proportionally — the dashboard tells you exactly what yours was."
 
-Vas a la tabla de rebalanceos.
+Go to the rebalance history table.
 
-> "Cada rebalanceo lo puede disparar cualquiera — no yo, cualquiera — y se lleva una recompensa por
-> el gas. Y cada uno se anuncia onchain con una descripción legible."
+> "Anyone can trigger a rebalance — not just me, anyone — and they earn a reward for the gas. And
+> every one is announced onchain with a readable description."
 
-Abres BaseScan, enseñas el evento `Announcement` con el texto literal.
+Open BaseScan, show the `Announcement` event with the literal text.
 
-> "Esto no lo escribe mi backend. Está en la cadena. Lo puedes leer sin confiar en mí."
+> "My backend didn't write this. It's on the chain. You can read it without trusting me."
 
-**2:55–3:10 — Cierre: el operador no puede tocar los fondos**
+**2:55–3:10 — Closing: the operator can't touch the funds**
 
-> "No hay función de retirada para el operador. No existe. Y siempre puedes salir con redención en
-> especie aunque los oráculos estén caídos y el router roto. Código abierto, link en la
-> descripción."
+> "There's no withdraw function for the operator. It doesn't exist. And you can always exit through
+> in-kind redemption, even if the oracles are down and the router is broken. Open source, link in
+> the description."
 
-**Notas de rodaje pendientes** (ver conversación de desarrollo para el detalle):
+**Open filming questions** (see the development conversation for detail):
 
-- El bloque de rebalanceo (2:25–2:55) necesita que el fondo tenga ya un depósito con drift real
-  antes de grabar — un fondo recién depositado, bien repartido según los pesos objetivo, no genera
-  drift por sí solo. Falta decidir cómo se provoca: esperar a que el mercado mueva los precios, o
-  forzarlo con una segunda operación deliberadamente desequilibrada.
-- El cierre (2:55–3:10) menciona `redeemInKind` con "oráculos caídos" — eso no se puede forzar en
-  directo con feeds reales. O se graba durante una ventana real de feeds obsoletos (ahora mismo,
-  p.ej., por el festivo del Labor Day en EE.UU.), o se sustituye por una demo del fork test
-  (`test_redeemInKindWorksPausedAndFullyStale`).
+- The rebalance block (2:25–2:55) needs the fund to already hold a deposit with real drift before
+  filming — a freshly deposited fund, split proportionally to target weights, doesn't produce drift
+  on its own. Still to decide: wait for the market to move prices naturally, or force it with a
+  deliberately unbalanced second operation.
+- The closing line (2:55–3:10) mentions `redeemInKind` with "oracles down" — that can't be staged
+  live against real feeds. Either film it during an actual window of stale feeds (right now, e.g.,
+  because of the US Labor Day holiday), or swap it for a demo of the fork test
+  (`test_redeemInKindWorksPausedAndFullyStale`) instead.
 
 ## Draft submission post
 
