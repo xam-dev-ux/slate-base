@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { Address } from "viem";
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { slateFundAbi } from "@/lib/abis";
 import { formatUsd, formatBps, formatTimestamp } from "@/lib/format";
 import { useNowSeconds } from "@/lib/useNow";
@@ -75,7 +75,17 @@ export function RebalancePanel({
     hash: submitted,
   });
 
-  const feeds = useFeedHealth(components);
+  const { data: swapPriceMaxAge } = useReadContract({
+    address: fund,
+    abi: slateFundAbi,
+    functionName: "swapPriceMaxAge",
+  });
+
+  // Rebalance legs are judged against swapPriceMaxAge (1h by default), much tighter than the
+  // feedStalenessTolerance (72h) `totalNAV()`/`pricingUnavailable` above tolerate — see the same
+  // note on the invest page. `isStale` here reflects that tighter bound, not the NAV one.
+  const feeds = useFeedHealth(components, swapPriceMaxAge as bigint | undefined);
+  const swapPricingStale = feeds.some((f) => f.isStale);
 
   const reward =
     totalNAV !== undefined && callerRewardBps !== undefined
@@ -93,7 +103,8 @@ export function RebalancePanel({
   // every leg would then revert, since current and target value are both zero for every component).
   const pricingUnavailable = navUnavailable === true;
   const fundIsEmpty = totalNAV === 0n;
-  const cannotRebalance = pricingUnavailable || fundIsEmpty || totalNAV === undefined;
+  const cannotRebalance =
+    pricingUnavailable || fundIsEmpty || totalNAV === undefined || swapPricingStale;
   const canAttempt = possible && !cannotRebalance;
 
   function computeLegs(): RebalanceLeg[] | null {
@@ -127,9 +138,11 @@ export function RebalancePanel({
       setLegError(
         pricingUnavailable
           ? "Pricing is paused while a feed is stale, so legs can't be safely computed. Try again once it updates."
-          : fundIsEmpty
-            ? "This fund holds nothing yet, so there is nothing to rebalance. Wait for a deposit."
-            : "Feed prices aren't loaded yet — try again in a moment."
+          : swapPricingStale
+            ? "NAV is priced fine, but at least one feed is too old to validate a swap against right now. Try again once feeds update."
+            : fundIsEmpty
+              ? "This fund holds nothing yet, so there is nothing to rebalance. Wait for a deposit."
+              : "Feed prices aren't loaded yet — try again in a moment."
       );
       return;
     }
@@ -166,9 +179,11 @@ export function RebalancePanel({
             ? "Rebalanceable now"
             : pricingUnavailable
               ? "Pricing paused"
-              : fundIsEmpty
-                ? "Fund is empty"
-                : "Not needed"}
+              : swapPricingStale
+                ? "Swap pricing stale"
+                : fundIsEmpty
+                  ? "Fund is empty"
+                  : "Not needed"}
         </span>
       </div>
 
@@ -176,9 +191,11 @@ export function RebalancePanel({
         <p className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-neutral-300">
           {pricingUnavailable
             ? "A component's feed is stale, so NAV can't be computed right now — nothing to rebalance against."
-            : fundIsEmpty
-              ? "No deposits yet — nothing to rebalance."
-              : reason}
+            : swapPricingStale
+              ? "NAV is priced fine, but at least one feed is too old to validate a swap against right now."
+              : fundIsEmpty
+                ? "No deposits yet — nothing to rebalance."
+                : reason}
         </p>
       )}
 

@@ -11,7 +11,7 @@ import {
 } from "wagmi";
 import { erc20Abi, slateFundAbi } from "@/lib/abis";
 import { USDC } from "@/lib/config";
-import { useFundSummary, useShareInfo, useComponents } from "@/lib/useFund";
+import { useFundSummary, useShareInfo, useComponents, useFeedHealth } from "@/lib/useFund";
 import { formatUsd, formatShares, formatBps } from "@/lib/format";
 import { fetchSwapLegs, type SwapLeg } from "@/lib/zeroex";
 import { StaleFeedBanner } from "@/components/MarketSession";
@@ -41,6 +41,21 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
   const summary = useFundSummary(isAddress(raw) ? fund : undefined);
   const share = useShareInfo(summary.share);
   const components = useComponents(fund, Number(summary.componentsLength ?? 0n));
+
+  const { data: swapPriceMaxAge } = useReadContract({
+    address: fund,
+    abi: slateFundAbi,
+    functionName: "swapPriceMaxAge",
+    query: { enabled: isAddress(raw) },
+  });
+
+  // NAV pricing tolerates a feed up to feedStalenessTolerance old (72h by default); the swap this
+  // deposit executes is judged against a much tighter swapPriceMaxAge (1h by default), on purpose —
+  // a stale-but-within-NAV-tolerance price is an acceptable basis for what the fund is worth, not
+  // for whether a trade against it was fair. A deposit can look perfectly fine by the NAV-level
+  // check and still revert deep in the swap for this reason, so it needs its own check here.
+  const swapFeeds = useFeedHealth(components, swapPriceMaxAge as bigint | undefined);
+  const swapPricingStale = swapFeeds.some((f) => f.isStale);
 
   const { writeContractAsync, isPending } = useWriteContract();
   const { isLoading: isApproveConfirming, isSuccess: isApproveSuccess } =
@@ -183,6 +198,14 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
         </div>
       )}
 
+      {!summary.navUnavailable && swapPricingStale && (
+        <p className="mt-6 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          NAV is priced fine, but at least one component&apos;s feed is too old to validate a swap
+          against right now — deposits need a fresher price than NAV does. Try again once feeds
+          update.
+        </p>
+      )}
+
       {summary.depositsPaused && (
         <p className="mt-6 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
           Deposits are currently paused by the operator. Redemptions remain open.
@@ -276,6 +299,7 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
                 usdcAmount === 0n ||
                 overWalletCap ||
                 summary.depositsPaused ||
+                swapPricingStale ||
                 isPending ||
                 isConfirming
               }
@@ -286,7 +310,7 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
           )}
         </div>
 
-        {!needsApproval && !legs && usdcAmount > 0n && !isQuoting && (
+        {!needsApproval && !legs && usdcAmount > 0n && !isQuoting && !swapPricingStale && (
           <p className="mt-3 text-xs text-neutral-500">
             Get a quote above first — the deposit needs the swap legs it produces.
           </p>
