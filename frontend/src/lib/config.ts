@@ -5,6 +5,12 @@ import type { Address } from "viem";
 
 export const CHAIN = base;
 
+/// Block where SlateFactory was first deployed on Base mainnet. No SlateFund, share token, or
+/// factory-issued event can exist before this — bounding log scans here instead of "earliest"
+/// keeps `eth_getLogs` within what public RPC endpoints will actually serve (mainnet.base.org
+/// rejects a full-history scan with a 413).
+export const GENESIS_BLOCK = 50_967_435n;
+
 const wcProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
 
 export const wagmiConfig = createConfig({
@@ -22,9 +28,9 @@ export const wagmiConfig = createConfig({
 
 export const USDC: Address = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 
-/// 0x AllowanceHolder on Base. Swap calldata is requested from the allowance-holder endpoint so
-/// `transaction.to` always equals this, which is what the fund contract is configured to call.
-export const ZEROX_ALLOWANCE_HOLDER: Address = "0x0000000000001fF3684f28c67538d4D072C22734";
+/// Aerodrome Slipstream SwapRouter on Base — what the fund contract is configured to call for
+/// every swap leg. See `script/SlateAddresses.sol` for why this one specifically, not 0x.
+export const AERODROME_SWAP_ROUTER: Address = "0x698Cb2b6dd822994581fEa6eA4Fc755d1363A92F";
 
 export const FACTORY_ADDRESS = process.env.NEXT_PUBLIC_FACTORY_ADDRESS as Address | undefined;
 

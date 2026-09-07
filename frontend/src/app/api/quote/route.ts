@@ -1,20 +1,99 @@
 import { NextResponse } from "next/server";
+import { createPublicClient, http, encodeFunctionData, type Address } from "viem";
+import { base } from "wagmi/chains";
 
-const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
-const CHAIN_ID = "8453";
+const USDC: Address = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 
-/// Server-side proxy for 0x quotes. The API key stays here and never reaches the browser.
-/// We request the allowance-holder flavour specifically, so `transaction.to` is always the
-/// AllowanceHolder contract the fund is configured to call.
+/// Aerodrome Slipstream (concentrated liquidity) on Base. 0x's API rejects every Coinbase
+/// Tokenized Stock with `BUY_TOKEN_NOT_AUTHORIZED_FOR_TRADE` — a compliance restriction on their
+/// side, not ours — so quotes and swap calldata are built directly against the real venue instead.
+/// This SwapRouter/Quoter pair is the one whose `factory()` actually matches the pools measured in
+/// `docs/research-phase0.md` — Aerodrome has multiple CL factory generations live at once (see
+/// `legacyCLFactory` / `legacyCLFactory2` in their own deployment constants), and the older
+/// SwapRouter at 0xBE6D8f0d...18a5 is bound to a legacy factory that does not know these pools.
+/// Verified against `aerodrome-finance/slipstream` `script/constants/output/DeployCL-Base-MinUnstake.json`
+/// and confirmed on-chain: `SwapRouter.factory() == PoolFactory == 0xf8f2eB49...c061Ef`.
+const AERODROME_SWAP_ROUTER: Address = "0x698Cb2b6dd822994581fEa6eA4Fc755d1363A92F";
+const AERODROME_QUOTER: Address = "0x514c8B5f54112481E28028F1166Bd78501089259";
+
+/// Slipstream pools use a per-pool tick spacing instead of Uniswap's fee tiers. Each of these was
+/// read directly off the deployed pool (`tickSpacing()`) during the redeploy — not assumed — so a
+/// component missing from this map fails loudly instead of guessing.
+const TICK_SPACING: Record<string, number> = {
+  ["0xb20000000000000000000078ee7ce2fE4908108C".toLowerCase()]: 10, // NVDAc
+  ["0xb200000000000000000000C2e324d24d7eEcd1fb".toLowerCase()]: 10, // AAPLc
+  ["0xb2000000000000000000008bC8786B856E61707C".toLowerCase()]: 10, // METAc
+  ["0xb2000000000000000000002D0BA3164cc74f58B7".toLowerCase()]: 10, // GOOGLc
+};
+
+/// Router-level floor. The fund's own `maxSlippageBps` (2%, checked against the Chainlink-implied
+/// value) is the real protection; this just fails fast, and cheaply, on a stale quote or a
+/// sandwich attempt before that on-chain check would anyway.
+const ROUTER_SLIPPAGE_BPS = 100n; // 1%
+
+/// The deployment output labels this contract just "Quoter", but BaseScan's verified source
+/// names it QuoterV2 — its `quoteExactInputSingle` takes a struct, not positional args, and the
+/// struct's field order (amountIn before tickSpacing) differs from the plain Quoter/SwapRouter
+/// convention (tickSpacing before recipient/deadline/amountIn). Confirmed against a real fork
+/// swap before trusting this in production: quote and executed output matched to the last unit.
+const quoterV2Abi = [
+  {
+    type: "function",
+    name: "quoteExactInputSingle",
+    stateMutability: "nonpayable",
+    inputs: [
+      {
+        name: "params",
+        type: "tuple",
+        components: [
+          { name: "tokenIn", type: "address" },
+          { name: "tokenOut", type: "address" },
+          { name: "amountIn", type: "uint256" },
+          { name: "tickSpacing", type: "int24" },
+          { name: "sqrtPriceLimitX96", type: "uint160" },
+        ],
+      },
+    ],
+    outputs: [
+      { name: "amountOut", type: "uint256" },
+      { name: "sqrtPriceX96After", type: "uint160" },
+      { name: "initializedTicksCrossed", type: "uint32" },
+      { name: "gasEstimate", type: "uint256" },
+    ],
+  },
+] as const;
+
+const swapRouterAbi = [
+  {
+    type: "function",
+    name: "exactInputSingle",
+    stateMutability: "payable",
+    inputs: [
+      {
+        name: "params",
+        type: "tuple",
+        components: [
+          { name: "tokenIn", type: "address" },
+          { name: "tokenOut", type: "address" },
+          { name: "tickSpacing", type: "int24" },
+          { name: "recipient", type: "address" },
+          { name: "deadline", type: "uint256" },
+          { name: "amountIn", type: "uint256" },
+          { name: "amountOutMinimum", type: "uint256" },
+          { name: "sqrtPriceLimitX96", type: "uint160" },
+        ],
+      },
+    ],
+    outputs: [{ name: "amountOut", type: "uint256" }],
+  },
+] as const;
+
+const client = createPublicClient({
+  chain: base,
+  transport: http(process.env.NEXT_PUBLIC_RPC_URL ?? "https://mainnet.base.org"),
+});
+
 export async function POST(request: Request) {
-  const apiKey = process.env.ZEROX_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: "ZEROX_API_KEY is not configured on the server." },
-      { status: 503 }
-    );
-  }
-
   let body: { taker?: string; legs?: { token: string; sellAmount: string }[] };
   try {
     body = await request.json();
@@ -30,33 +109,49 @@ export async function POST(request: Request) {
   try {
     const results = await Promise.all(
       legs.map(async (leg) => {
-        const url = new URL("https://api.0x.org/swap/allowance-holder/quote");
-        url.searchParams.set("chainId", CHAIN_ID);
-        url.searchParams.set("sellToken", USDC);
-        url.searchParams.set("buyToken", leg.token);
-        url.searchParams.set("sellAmount", leg.sellAmount);
-        url.searchParams.set("taker", taker);
-
-        const res = await fetch(url, {
-          headers: { "0x-api-key": apiKey, "0x-version": "v2" },
-          cache: "no-store",
-        });
-
-        if (!res.ok) {
-          throw new Error(`0x quote failed for ${leg.token}: ${res.status} ${await res.text()}`);
+        const tokenOut = leg.token as Address;
+        const tickSpacing = TICK_SPACING[tokenOut.toLowerCase()];
+        if (tickSpacing === undefined) {
+          throw new Error(`No known Aerodrome Slipstream pool for ${leg.token}.`);
         }
 
-        const quote = (await res.json()) as {
-          buyAmount: string;
-          transaction: { to: string; data: string };
-        };
+        const amountIn = BigInt(leg.sellAmount);
+
+        const {
+          result: [amountOut],
+        } = await client.simulateContract({
+          address: AERODROME_QUOTER,
+          abi: quoterV2Abi,
+          functionName: "quoteExactInputSingle",
+          args: [{ tokenIn: USDC, tokenOut, amountIn, tickSpacing, sqrtPriceLimitX96: 0n }],
+        });
+
+        const amountOutMinimum = amountOut - (amountOut * ROUTER_SLIPPAGE_BPS) / 10_000n;
+        const deadline = BigInt(Math.floor(Date.now() / 1000) + 300);
+
+        const data = encodeFunctionData({
+          abi: swapRouterAbi,
+          functionName: "exactInputSingle",
+          args: [
+            {
+              tokenIn: USDC,
+              tokenOut,
+              tickSpacing,
+              recipient: taker as Address,
+              deadline,
+              amountIn,
+              amountOutMinimum,
+              sqrtPriceLimitX96: 0n,
+            },
+          ],
+        });
 
         return {
           token: leg.token,
           sellAmount: leg.sellAmount,
-          buyAmount: quote.buyAmount,
-          data: quote.transaction.data,
-          to: quote.transaction.to,
+          buyAmount: amountOut.toString(),
+          data,
+          to: AERODROME_SWAP_ROUTER,
         };
       })
     );

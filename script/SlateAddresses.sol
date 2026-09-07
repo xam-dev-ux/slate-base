@@ -14,11 +14,15 @@ library SlateAddresses {
 
     address internal constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
 
-    /// @notice 0x AllowanceHolder on Base (Cancun-hardfork chains share this address). Swap
-    ///         calldata is built off-chain against the `/swap/allowance-holder/quote` endpoint so
-    ///         `transaction.to` is always this contract; the fund treats it as the sole call target
-    ///         and validates every outcome against Chainlink.
-    address internal constant ZEROX_ALLOWANCE_HOLDER = 0x0000000000001fF3684f28c67538d4D072C22734;
+    /// @notice Aerodrome Slipstream SwapRouter on Base. 0x's API rejects every Coinbase Tokenized
+    ///         Stock with `BUY_TOKEN_NOT_AUTHORIZED_FOR_TRADE` (their compliance restriction, not
+    ///         ours), so swaps route directly against the real liquidity venue instead. Aerodrome
+    ///         runs multiple CL factory generations at once — this is the SwapRouter whose
+    ///         `factory()` actually matches the pools in `docs/research-phase0.md`
+    ///         (`0xf8f2eB49...c061Ef`), confirmed on-chain and against a real fork swap, not the
+    ///         older SwapRouter bound to Aerodrome's `legacyCLFactory`. The fund treats it as the
+    ///         sole call target and validates every outcome against Chainlink regardless.
+    address internal constant AERODROME_SWAP_ROUTER = 0x698Cb2b6dd822994581fEa6eA4Fc755d1363A92F;
 
     /*//////////////////////////////////////////////////////////////
                           COMPONENTS AND FEEDS

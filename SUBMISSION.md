@@ -227,11 +227,17 @@ All on Base mainnet (chain 8453). Fill in after deployment.
 
 | Contract | Address | BaseScan |
 |---|---|---|
-| `SlateFactory` | TODO | TODO |
-| Slate Big Tech 4 (`SLATE4`) | TODO | TODO |
-| └ share token | TODO | TODO |
-| Slate AI Core (`SLATEAI`) | TODO | TODO |
-| └ share token | TODO | TODO |
+| `SlateFactory` | `0x1499101084A5220a31AeE1B55eAAf0d2aF866A6F` | [Verified](https://basescan.org/address/0x1499101084a5220a31aee1b55eaaf0d2af866a6f) |
+| Slate Big Tech 4 (`SLATE4`) | `0xc98010A2a990DD9B8341E237eaF1E85063f01a99` | [Verified](https://basescan.org/address/0xc98010a2a990dd9b8341e237eaf1e85063f01a99) |
+| └ share token | `0xb200000000000000000000586D8Cf1beA3507a32` | [BaseScan](https://basescan.org/address/0xb200000000000000000000586d8cf1bea3507a32) |
+| Slate AI Core (`SLATEAI`) | `0x38bfE2cb0B98a1E7B0046da668Edbea39288ff6B` | [Verified](https://basescan.org/address/0x38bfe2cb0b98a1e7b0046da668edbea39288ff6b) |
+| └ share token | `0xB2000000000000000000001Edc48B0F3068304E2` | [BaseScan](https://basescan.org/address/0xb2000000000000000000001edc48b0f3068304e2) |
+
+Superseded a first deploy (`0xBa9b1EE4...`, `0x4ab61530...`, `0x89Aa9Ac2...`) built with 0x's
+AllowanceHolder as the swap router: 0x's API rejects every Coinbase Tokenized Stock with
+`BUY_TOKEN_NOT_AUTHORIZED_FOR_TRADE`, a compliance restriction on their side. This deploy routes
+swaps directly through Aerodrome Slipstream instead (see `script/SlateAddresses.sol`). The
+abandoned contracts hold no deposits and are otherwise harmless.
 
 ### Basket composition
 
@@ -254,8 +260,8 @@ pool anywhere on Base.
 
 | What | Tx | Notes |
 |---|---|---|
-| Factory deploy | TODO | |
-| Fund deploys | TODO | |
+| Factory deploy | [`0xc1e093c357085f1b54c40e533632bbaed83b7daf1fa85dba0c1a877f677b1ce7`](https://basescan.org/tx/0xc1e093c357085f1b54c40e533632bbaed83b7daf1fa85dba0c1a877f677b1ce7) | Block 50984267, paid 0.0000224 ETH |
+| Fund deploys | [`0x4e9c7ef69d1c7e6fa613644c4b920e337d3148eb78fa1c683a97ff08b769bef7`](https://basescan.org/tx/0x4e9c7ef69d1c7e6fa613644c4b920e337d3148eb78fa1c683a97ff08b769bef7) (Big Tech 4), [`0xe2c95f35fe547b60d72121cce11935f91c5baa4d475b1c1a710d6590a0cb7f50`](https://basescan.org/tx/0xe2c95f35fe547b60d72121cce11935f91c5baa4d475b1c1a710d6590a0cb7f50) (AI Core) | Block 50984316, paid 0.0000424 ETH total |
 | Real deposit (second wallet) | TODO | |
 | Real rebalance | TODO | Record how drift was achieved |
 | `announce()` on that rebalance | TODO | The description visible on BaseScan |

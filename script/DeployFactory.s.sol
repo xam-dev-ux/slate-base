@@ -16,10 +16,10 @@ contract DeployFactory is Script {
     function run() external returns (address factory) {
         console.log("Deployer:", DEPLOYER);
         console.log("USDC:", SlateAddresses.USDC);
-        console.log("Swap router (0x AllowanceHolder):", SlateAddresses.ZEROX_ALLOWANCE_HOLDER);
+        console.log("Swap router (Aerodrome Slipstream):", SlateAddresses.AERODROME_SWAP_ROUTER);
 
         vm.startBroadcast();
-        SlateFactory deployed = new SlateFactory(SlateAddresses.USDC, SlateAddresses.ZEROX_ALLOWANCE_HOLDER);
+        SlateFactory deployed = new SlateFactory(SlateAddresses.USDC, SlateAddresses.AERODROME_SWAP_ROUTER);
         vm.stopBroadcast();
 
         factory = address(deployed);
