@@ -6,12 +6,42 @@ import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagm
 import { slateFundAbi } from "@/lib/abis";
 import { formatUsd, formatBps, formatTimestamp } from "@/lib/format";
 import { useNowSeconds } from "@/lib/useNow";
+import { useFeedHealth, type Component } from "@/lib/useFund";
+import { fetchRebalanceLegs, type RebalanceLeg } from "@/lib/zeroex";
+
+/// Under-correct every leg by this much so rounding, or the price ticking between quoting and
+/// execution, can't push a leg past the contract's OverSell/OverBuy boundary (which checks against
+/// the exact target, not a range). The contract only requires the *worst* drift to land back under
+/// `driftThresholdBps` afterward, not that every component lands exactly on target, so leaving this
+/// much on the table is free correctness margin, not a real cost.
+const MARGIN_BPS = 50n; // 0.5%
+
+/// Raw component units -> USDC(6dp), mirroring `SlateFund._quoteComponentToUsdc` exactly.
+function quoteComponentToUsdc(
+  raw: bigint,
+  price: bigint,
+  tokenDecimals: number,
+  feedDecimals: number
+): bigint {
+  return (raw * price * 1_000_000n) / 10n ** BigInt(tokenDecimals + feedDecimals);
+}
+
+/// USDC(6dp) -> raw component units, mirroring `SlateFund._quoteUsdcToComponent` exactly.
+function quoteUsdcToComponent(
+  usdc: bigint,
+  price: bigint,
+  tokenDecimals: number,
+  feedDecimals: number
+): bigint {
+  return (usdc * 10n ** BigInt(tokenDecimals + feedDecimals)) / (1_000_000n * price);
+}
 
 /// Rebalancing is permissionless, but the swap legs have to be built off-chain (the contract
-/// validates their outcome against Chainlink rather than trusting the calldata). Constructing
-/// those legs needs a 0x quote, so this panel surfaces the live status and hands a
-/// zero-leg transaction to anyone who wants to try — the contract rejects anything that would
-/// not actually restore the weights.
+/// validates their outcome against Chainlink rather than trusting the calldata). This panel
+/// computes the legs that would restore target weights from the fund's own live state — component
+/// balances, live prices, and total NAV — and hands the contract real calldata to try. The
+/// contract rejects anything that would not actually restore the weights, so a wrong computation
+/// here costs gas on a revert, never fund safety.
 export function RebalancePanel({
   fund,
   possible,
@@ -21,6 +51,8 @@ export function RebalancePanel({
   driftThresholdBps,
   callerRewardBps,
   totalNAV,
+  navUnavailable,
+  components,
 }: {
   fund: Address;
   possible?: boolean;
@@ -30,14 +62,20 @@ export function RebalancePanel({
   driftThresholdBps?: number;
   callerRewardBps?: number;
   totalNAV?: bigint;
+  navUnavailable?: boolean;
+  components: Component[];
 }) {
   const { isConnected } = useAccount();
   const now = useNowSeconds();
   const [submitted, setSubmitted] = useState<`0x${string}` | undefined>();
+  const [legError, setLegError] = useState<string | null>(null);
+  const [isBuilding, setIsBuilding] = useState(false);
   const { writeContractAsync, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash: submitted,
   });
+
+  const feeds = useFeedHealth(components);
 
   const reward =
     totalNAV !== undefined && callerRewardBps !== undefined
@@ -47,14 +85,70 @@ export function RebalancePanel({
   const eligibleNow =
     nextEligibleAt !== undefined && now > 0 ? BigInt(now) >= nextEligibleAt : undefined;
 
+  // totalNAV() reverts outright while any feed is stale (checked unconditionally for every
+  // component, even ones the fund holds none of) — distinct from a fund that priced fine and is
+  // genuinely empty. Either way, no legs can be computed: `pricingUnavailable` means there's no
+  // live price to compute them from; a truly empty fund can't produce any (the contract's own
+  // drift check reports "needed" even at zero NAV — 0% is "drifted" from any positive target — but
+  // every leg would then revert, since current and target value are both zero for every component).
+  const pricingUnavailable = navUnavailable === true;
+  const fundIsEmpty = totalNAV === 0n;
+  const cannotRebalance = pricingUnavailable || fundIsEmpty || totalNAV === undefined;
+  const canAttempt = possible && !cannotRebalance;
+
+  function computeLegs(): RebalanceLeg[] | null {
+    if (cannotRebalance || totalNAV === undefined) return null;
+
+    const legs: RebalanceLeg[] = [];
+    for (const f of feeds) {
+      if (f.price === undefined || f.balance === undefined) return null;
+
+      const currentValue = quoteComponentToUsdc(f.balance, f.price, f.tokenDecimals, f.feedDecimals);
+      const targetValue = (totalNAV * BigInt(f.targetWeightBps)) / 10_000n;
+
+      if (currentValue > targetValue) {
+        const sellValue = ((currentValue - targetValue) * (10_000n - MARGIN_BPS)) / 10_000n;
+        const sellRaw = quoteUsdcToComponent(sellValue, f.price, f.tokenDecimals, f.feedDecimals);
+        legs.push({ token: f.token, signedAmount: -sellRaw });
+      } else if (currentValue < targetValue) {
+        const buyValue = ((targetValue - currentValue) * (10_000n - MARGIN_BPS)) / 10_000n;
+        legs.push({ token: f.token, signedAmount: buyValue });
+      } else {
+        legs.push({ token: f.token, signedAmount: 0n });
+      }
+    }
+    return legs;
+  }
+
   async function trigger() {
-    const hash = await writeContractAsync({
-      address: fund,
-      abi: slateFundAbi,
-      functionName: "rebalance",
-      args: [[], []],
-    });
-    setSubmitted(hash);
+    setLegError(null);
+    const legs = computeLegs();
+    if (!legs) {
+      setLegError(
+        pricingUnavailable
+          ? "Pricing is paused while a feed is stale, so legs can't be safely computed. Try again once it updates."
+          : fundIsEmpty
+            ? "This fund holds nothing yet, so there is nothing to rebalance. Wait for a deposit."
+            : "Feed prices aren't loaded yet — try again in a moment."
+      );
+      return;
+    }
+
+    setIsBuilding(true);
+    try {
+      const { amounts, calldata } = await fetchRebalanceLegs({ fund, legs });
+      const hash = await writeContractAsync({
+        address: fund,
+        abi: slateFundAbi,
+        functionName: "rebalance",
+        args: [amounts, calldata],
+      });
+      setSubmitted(hash);
+    } catch (e) {
+      setLegError(e instanceof Error ? e.message : "Could not build the rebalance legs.");
+    } finally {
+      setIsBuilding(false);
+    }
   }
 
   return (
@@ -63,18 +157,28 @@ export function RebalancePanel({
         <h3 className="font-medium text-white">Rebalance status</h3>
         <span
           className={`rounded-full px-2 py-0.5 text-xs ${
-            possible
+            canAttempt
               ? "bg-emerald-500/10 text-emerald-300"
               : "bg-white/5 text-neutral-400"
           }`}
         >
-          {possible ? "Rebalanceable now" : "Not needed"}
+          {canAttempt
+            ? "Rebalanceable now"
+            : pricingUnavailable
+              ? "Pricing paused"
+              : fundIsEmpty
+                ? "Fund is empty"
+                : "Not needed"}
         </span>
       </div>
 
       {reason && possible && (
         <p className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3 text-sm text-neutral-300">
-          {reason}
+          {pricingUnavailable
+            ? "A component's feed is stale, so NAV can't be computed right now — nothing to rebalance against."
+            : fundIsEmpty
+              ? "No deposits yet — nothing to rebalance."
+              : reason}
         </p>
       )}
 
@@ -104,16 +208,20 @@ export function RebalancePanel({
 
       <button
         type="button"
-        disabled={!isConnected || !possible || isPending || isConfirming}
+        disabled={!isConnected || !canAttempt || isPending || isConfirming || isBuilding}
         onClick={trigger}
         className="mt-6 w-full rounded-lg bg-indigo-500 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:bg-white/5 disabled:text-neutral-500"
       >
         {!isConnected
           ? "Connect a wallet to trigger"
-          : isPending || isConfirming
-            ? "Confirming…"
-            : "Trigger rebalance"}
+          : isBuilding
+            ? "Building legs…"
+            : isPending || isConfirming
+              ? "Confirming…"
+              : "Trigger rebalance"}
       </button>
+
+      {legError && <p className="mt-3 text-xs text-amber-400">{legError}</p>}
 
       {isSuccess && (
         <p className="mt-3 text-xs text-emerald-400">

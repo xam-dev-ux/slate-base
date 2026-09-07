@@ -94,7 +94,10 @@ const client = createPublicClient({
 });
 
 export async function POST(request: Request) {
-  let body: { taker?: string; legs?: { token: string; sellAmount: string }[] };
+  let body: {
+    taker?: string;
+    legs?: { token: string; sellAmount: string; direction?: "buy" | "sell" }[];
+  };
   try {
     body = await request.json();
   } catch {
@@ -109,12 +112,18 @@ export async function POST(request: Request) {
   try {
     const results = await Promise.all(
       legs.map(async (leg) => {
-        const tokenOut = leg.token as Address;
-        const tickSpacing = TICK_SPACING[tokenOut.toLowerCase()];
+        const component = leg.token as Address;
+        const tickSpacing = TICK_SPACING[component.toLowerCase()];
         if (tickSpacing === undefined) {
           throw new Error(`No known Aerodrome Slipstream pool for ${leg.token}.`);
         }
 
+        // "buy" spends USDC for the component (deposits, and rebalance legs that restore an
+        // underweight component); "sell" does the reverse (rebalance legs that trim an overweight
+        // one). Same pool, same tick spacing — only which side is tokenIn/tokenOut flips.
+        const selling = leg.direction === "sell";
+        const tokenIn = selling ? component : USDC;
+        const tokenOut = selling ? USDC : component;
         const amountIn = BigInt(leg.sellAmount);
 
         const {
@@ -123,7 +132,7 @@ export async function POST(request: Request) {
           address: AERODROME_QUOTER,
           abi: quoterV2Abi,
           functionName: "quoteExactInputSingle",
-          args: [{ tokenIn: USDC, tokenOut, amountIn, tickSpacing, sqrtPriceLimitX96: 0n }],
+          args: [{ tokenIn, tokenOut, amountIn, tickSpacing, sqrtPriceLimitX96: 0n }],
         });
 
         const amountOutMinimum = amountOut - (amountOut * ROUTER_SLIPPAGE_BPS) / 10_000n;
@@ -134,7 +143,7 @@ export async function POST(request: Request) {
           functionName: "exactInputSingle",
           args: [
             {
-              tokenIn: USDC,
+              tokenIn,
               tokenOut,
               tickSpacing,
               recipient: taker as Address,

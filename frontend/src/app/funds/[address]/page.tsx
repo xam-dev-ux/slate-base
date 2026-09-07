@@ -207,6 +207,8 @@ export default function FundPage({ params }: { params: Promise<{ address: string
           driftThresholdBps={summary.driftThresholdBps}
           callerRewardBps={summary.callerRewardBps}
           totalNAV={summary.totalNAV}
+          navUnavailable={summary.navUnavailable}
+          components={components}
         />
         <FeedHealthPanel
           components={components}

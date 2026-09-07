@@ -40,13 +40,17 @@ export function withBuilderCode(data: `0x${string}`): `0x${string}` {
   return `${data}${suffix.slice(2)}` as `0x${string}`;
 }
 
-/// Requests one allowance-holder quote per component. The API key is never exposed to the browser
-/// — this goes through our own route handler, which holds it server-side.
-export async function fetchSwapLegs(params: {
+/// Requests one Aerodrome quote per leg. Runs server-side (see app/api/quote) so the RPC calls
+/// used to build swap calldata don't add to the client's own request volume.
+///
+/// `direction` is "buy" (spend `sellAmount` USDC for the component — deposits, and rebalance legs
+/// restoring an underweight component) by default, or "sell" (spend `sellAmount` raw component
+/// units for USDC — rebalance legs trimming an overweight one).
+async function fetchQuoteLegs(params: {
   fund: Address;
-  components: { token: Address; sellAmount: bigint }[];
+  legs: { token: Address; sellAmount: bigint; direction?: "buy" | "sell" }[];
 }): Promise<SwapLeg[]> {
-  const active = params.components.filter((c) => c.sellAmount > 0n);
+  const active = params.legs.filter((c) => c.sellAmount > 0n);
   if (active.length === 0) return [];
 
   const res = await fetch("/api/quote", {
@@ -54,7 +58,11 @@ export async function fetchSwapLegs(params: {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       taker: params.fund,
-      legs: active.map((c) => ({ token: c.token, sellAmount: c.sellAmount.toString() })),
+      legs: active.map((c) => ({
+        token: c.token,
+        sellAmount: c.sellAmount.toString(),
+        direction: c.direction ?? "buy",
+      })),
     }),
   });
 
@@ -73,4 +81,45 @@ export async function fetchSwapLegs(params: {
     buyAmount: BigInt(l.buyAmount),
     data: withBuilderCode(l.data),
   }));
+}
+
+/// Deposits: every leg spends USDC to buy a component, in the target-weight split.
+export async function fetchSwapLegs(params: {
+  fund: Address;
+  components: { token: Address; sellAmount: bigint }[];
+}): Promise<SwapLeg[]> {
+  return fetchQuoteLegs({ fund: params.fund, legs: params.components });
+}
+
+/// One rebalance leg, in the exact signed units `SlateFund.rebalance`'s `amounts[]` expects:
+/// negative `signedAmount` sells that many *raw component units* for USDC; positive spends that
+/// much *USDC, 6dp* buying the component. The two sides are different units on purpose — that's
+/// what the contract itself takes. Zero means "no leg" (the slot is still required in both arrays).
+export type RebalanceLeg = { token: Address; signedAmount: bigint };
+
+/// Builds the signed amounts + swap calldata `SlateFund.rebalance` expects, in component order.
+/// Legs are quoted only for components with a non-zero amount; a zero leg gets `0x` calldata,
+/// which the contract never inspects (it `continue`s past zero-amount components without calling
+/// `_executeSwap` at all).
+export async function fetchRebalanceLegs(params: {
+  fund: Address;
+  legs: RebalanceLeg[];
+}): Promise<{ amounts: bigint[]; calldata: `0x${string}`[] }> {
+  const quoted = await fetchQuoteLegs({
+    fund: params.fund,
+    legs: params.legs
+      .filter((l) => l.signedAmount !== 0n)
+      .map((l) => ({
+        token: l.token,
+        sellAmount: l.signedAmount < 0n ? -l.signedAmount : l.signedAmount,
+        direction: l.signedAmount < 0n ? "sell" : "buy",
+      })),
+  });
+
+  const byToken = new Map(quoted.map((l) => [l.token.toLowerCase(), l]));
+
+  return {
+    amounts: params.legs.map((l) => l.signedAmount),
+    calldata: params.legs.map((l) => byToken.get(l.token.toLowerCase())?.data ?? "0x"),
+  };
 }
