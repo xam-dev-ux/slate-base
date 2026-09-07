@@ -7,11 +7,12 @@ import { useAccount, useReadContract } from "wagmi";
 import { useFundSummary, useShareInfo, useComponents } from "@/lib/useFund";
 import { erc20Abi, slateFundAbi } from "@/lib/abis";
 import { formatUsd, formatShares, shortAddress, formatBps } from "@/lib/format";
-import { explorerAddress } from "@/lib/config";
+import { explorerAddress, SHOW_PRICING_MODE_UI } from "@/lib/config";
 import { CompositionTable } from "@/components/CompositionTable";
 import { RebalanceHistory } from "@/components/RebalanceHistory";
 import { RebalancePanel } from "@/components/RebalancePanel";
 import { FeedHealthPanel } from "@/components/FeedHealthPanel";
+import { PricingModePanel } from "@/components/PricingModePanel";
 import { StaleFeedBanner } from "@/components/MarketSession";
 import { RedeemInKindButton } from "@/components/RedeemInKind";
 import { CorporateActions } from "@/components/CorporateActions";
@@ -219,6 +220,12 @@ export default function FundPage({ params }: { params: Promise<{ address: string
           stalenessTolerance={stalenessTolerance as bigint | undefined}
         />
       </div>
+
+      {SHOW_PRICING_MODE_UI && (
+        <div className="mt-6">
+          <PricingModePanel fund={fund} operator={summary.operator} />
+        </div>
+      )}
 
       <section className="mt-12">
         <h2 className="text-sm font-medium uppercase tracking-wider text-neutral-500">

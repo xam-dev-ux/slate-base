@@ -52,6 +52,12 @@ export const AERODROME_SWAP_ROUTER: Address = "0x698Cb2b6dd822994581fEa6eA4Fc755
 
 export const FACTORY_ADDRESS = process.env.NEXT_PUBLIC_FACTORY_ADDRESS as Address | undefined;
 
+/// Controls whether the "Pricing mode" panel (TWAP fallback status + operator toggle) renders on
+/// the fund page — the on-chain feature itself is a per-fund contract setting, not something this
+/// flag can turn on or off; this only hides/shows the UI surface for it, e.g. while it's still
+/// being validated in production. Defaults on.
+export const SHOW_PRICING_MODE_UI = process.env.NEXT_PUBLIC_SHOW_PRICING_MODE_UI !== "false";
+
 /// Optional explicit fund list, so the app works before the factory is indexed.
 export const CONFIGURED_FUNDS: Address[] = (process.env.NEXT_PUBLIC_FUND_ADDRESSES ?? "")
   .split(",")

@@ -24,6 +24,10 @@ const SECTIONS = [
     title: "The operator can't touch your funds",
     body: "There's no withdraw function for the operator — it isn't missing a permission, it doesn't exist. And you can always exit in kind, even if the price feeds are frozen or the swap router is down.",
   },
+  {
+    title: "Pricing can fall back to the pool's own average, if the operator opts in",
+    body: "Aerodrome's pools keep trading these stocks around the clock, even when Chainlink hasn't published a fresh price in days — a long weekend, a holiday. By default the fund just pauses pricing rather than trust anything else. An operator can opt a fund into a fallback: a time-weighted average pulled straight from the pool, far harder to move than a single spot price, but still a weaker guarantee than a live independent oracle. Check a fund's \"Pricing mode\" panel to see whether this is active.",
+  },
 ];
 
 export function HowItWorksModal() {

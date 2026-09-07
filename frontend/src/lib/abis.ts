@@ -54,6 +54,11 @@ export const slateFundAbi = [
             "name": "targetWeightBps",
             "type": "uint16",
             "internalType": "uint16"
+          },
+          {
+            "name": "pool",
+            "type": "address",
+            "internalType": "address"
           }
         ]
       },
@@ -165,6 +170,11 @@ export const slateFundAbi = [
         "name": "feedDecimals",
         "type": "uint8",
         "internalType": "uint8"
+      },
+      {
+        "name": "pool",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -599,6 +609,32 @@ export const slateFundAbi = [
   },
   {
     "type": "function",
+    "name": "setTwapFallbackEnabled",
+    "inputs": [
+      {
+        "name": "enabled",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setTwapWindow",
+    "inputs": [
+      {
+        "name": "w",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "swapPriceMaxAge",
     "inputs": [],
     "outputs": [
@@ -632,6 +668,32 @@ export const slateFundAbi = [
         "name": "nav",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "twapFallbackEnabled",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "twapWindow",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint32",
+        "internalType": "uint32"
       }
     ],
     "stateMutability": "view"
@@ -1134,6 +1196,11 @@ export const slateFactoryAbi = [
             "name": "targetWeightBps",
             "type": "uint16",
             "internalType": "uint16"
+          },
+          {
+            "name": "pool",
+            "type": "address",
+            "internalType": "address"
           }
         ]
       },
