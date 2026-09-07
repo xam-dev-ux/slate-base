@@ -157,8 +157,7 @@ npm run dev
 
 Populate `.env.local` with the deployed addresses above
 (`NEXT_PUBLIC_FACTORY_ADDRESS`/`NEXT_PUBLIC_FUND_ADDRESSES`), and optionally a WalletConnect
-project ID and a Base Builder Code. See `docs/launch-runbook.md` for the full setup, including the
-gotchas that cost real time getting here.
+project ID and a Base Builder Code.
 
 ### Deployment
 

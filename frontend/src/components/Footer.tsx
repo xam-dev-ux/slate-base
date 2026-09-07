@@ -19,7 +19,7 @@ export function Footer() {
           <span>
             © 2026{" "}
             <a
-              href="https://github.com/xam-dev-ux"
+              href="https://github.com/xam-dev-ux/slate-base"
               target="_blank"
               rel="noopener noreferrer"
               className="transition hover:text-neutral-400"

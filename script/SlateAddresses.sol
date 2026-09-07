@@ -18,8 +18,8 @@ library SlateAddresses {
     ///         Stock with `BUY_TOKEN_NOT_AUTHORIZED_FOR_TRADE` (their compliance restriction, not
     ///         ours), so swaps route directly against the real liquidity venue instead. Aerodrome
     ///         runs multiple CL factory generations at once — this is the SwapRouter whose
-    ///         `factory()` actually matches the pools in `docs/research-phase0.md`
-    ///         (`0xf8f2eB49...c061Ef`), confirmed on-chain and against a real fork swap, not the
+    ///         `factory()` actually matches the pools used here (`0xf8f2eB49...c061Ef`),
+    ///         confirmed on-chain and against a real fork swap, not the
     ///         older SwapRouter bound to Aerodrome's `legacyCLFactory`. The fund treats it as the
     ///         sole call target and validates every outcome against Chainlink regardless.
     address internal constant AERODROME_SWAP_ROUTER = 0x698Cb2b6dd822994581fEa6eA4Fc755d1363A92F;
@@ -38,8 +38,8 @@ library SlateAddresses {
     address internal constant METAC_FEED = 0x6526aE6797A76123638b863AeE4dD27Ba4E4b27D;
     address internal constant GOOGLC_FEED = 0x5bF49E0ffA937CE2FfF033c739aD7C634c4D34F2;
 
-    /// @notice Aerodrome Slipstream pools (component/USDC, tickSpacing 10), the same ones measured
-    ///         in docs/research-phase0.md — token0 is USDC on every one, confirmed on-chain. Back
+    /// @notice Aerodrome Slipstream pools (component/USDC, tickSpacing 10) — token0 is USDC on
+    ///         every one, confirmed on-chain. Back
     ///         the TWAP fallback (`SlateFund.twapFallbackEnabled`), off by default; verified against
     ///         real pool state to land within ~1% of Chainlink's own price for all four.
     address internal constant NVDAC_POOL = 0x853F5f1B92b16714Fe6CDA67CAad0856B83C7ab9;

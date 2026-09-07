@@ -7,8 +7,8 @@ const USDC: Address = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 /// Aerodrome Slipstream (concentrated liquidity) on Base. 0x's API rejects every Coinbase
 /// Tokenized Stock with `BUY_TOKEN_NOT_AUTHORIZED_FOR_TRADE` — a compliance restriction on their
 /// side, not ours — so quotes and swap calldata are built directly against the real venue instead.
-/// This SwapRouter/Quoter pair is the one whose `factory()` actually matches the pools measured in
-/// `docs/research-phase0.md` — Aerodrome has multiple CL factory generations live at once (see
+/// This SwapRouter/Quoter pair is the one whose `factory()` actually matches the pools used here
+/// — Aerodrome has multiple CL factory generations live at once (see
 /// `legacyCLFactory` / `legacyCLFactory2` in their own deployment constants), and the older
 /// SwapRouter at 0xBE6D8f0d...18a5 is bound to a legacy factory that does not know these pools.
 /// Verified against `aerodrome-finance/slipstream` `script/constants/output/DeployCL-Base-MinUnstake.json`
