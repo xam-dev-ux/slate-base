@@ -1,6 +1,14 @@
 import { http, createConfig } from "wagmi";
 import { base } from "wagmi/chains";
-import { coinbaseWallet, injected, walletConnect } from "wagmi/connectors";
+import { connectorsForWallets } from "@rainbow-me/rainbowkit";
+import {
+  coinbaseWallet,
+  injectedWallet,
+  metaMaskWallet,
+  rabbyWallet,
+  rainbowWallet,
+  walletConnectWallet,
+} from "@rainbow-me/rainbowkit/wallets";
 import { farcasterMiniApp } from "@farcaster/miniapp-wagmi-connector";
 import type { Address } from "viem";
 
@@ -14,18 +22,34 @@ export const CHAIN = base;
 /// (see `lib/getLogsChunked.ts`) paginates from this bound rather than issuing it as one call.
 export const GENESIS_BLOCK = 50_984_267n;
 
-const wcProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+const wcProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "";
+
+/// Plain wagmi connectors (injected(), coinbaseWallet() from "wagmi/connectors", etc.) work, but
+/// RainbowKit's own modal only renders its "detected wallet" list — MetaMask, Rabby, and so on —
+/// for connectors built through its own `connectorsForWallets`/wallet-definition helpers. Without
+/// this, `<ConnectButton>` silently falls back to its generic "What is a Wallet? / Get a Wallet"
+/// empty state even with a real wallet injected and EIP-6963-announced — confirmed by mocking a
+/// MetaMask-shaped provider in a test page and seeing the same fallback screen either way.
+const rainbowKitConnectors = connectorsForWallets(
+  [
+    {
+      groupName: "Popular",
+      wallets: [metaMaskWallet, rabbyWallet, coinbaseWallet, rainbowWallet, walletConnectWallet],
+    },
+    // Catches any other injected EIP-1193/6963 wallet not in the curated list above.
+    { groupName: "Other", wallets: [injectedWallet] },
+  ],
+  { appName: "Slate", projectId: wcProjectId }
+);
 
 export const wagmiConfig = createConfig({
   chains: [base],
   connectors: [
+    ...rainbowKitConnectors,
     // Base App's in-app browser bridges the wallet through this connector, not a plain injected
     // provider — without it, and without calling the mini-app SDK's ready() (see providers.tsx),
     // "Connect" does nothing there even though the same button works in a normal browser.
     farcasterMiniApp(),
-    injected(),
-    coinbaseWallet({ appName: "Slate" }),
-    ...(wcProjectId ? [walletConnect({ projectId: wcProjectId })] : []),
   ],
   transports: {
     // mainnet.base.org rate-limits aggressively (429) once a page fires more than a handful of
