@@ -90,7 +90,14 @@ const swapRouterAbi = [
 
 const client = createPublicClient({
   chain: base,
-  transport: http(process.env.NEXT_PUBLIC_RPC_URL ?? "https://mainnet.base.org"),
+  // Same tuning as the client-side transport (lib/config.ts) — mainnet.base.org rate-limits
+  // aggressively, and this route had no retry at all, failing a whole deposit's quote on a single
+  // transient 429 instead of riding it out.
+  transport: http(process.env.NEXT_PUBLIC_RPC_URL ?? "https://mainnet.base.org", {
+    batch: { batchSize: 50, wait: 50 },
+    retryCount: 3,
+    retryDelay: 750,
+  }),
 });
 
 export async function POST(request: Request) {
