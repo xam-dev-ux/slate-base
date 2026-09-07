@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export function Footer() {
   return (
     <footer className="mt-24 border-t border-white/10 bg-black/20">
@@ -12,6 +14,31 @@ export function Footer() {
           contract risk, oracle risk, liquidity risk and market risk. Use only funds you can afford
           to lose. Verify all contract addresses independently.
         </p>
+
+        <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-white/5 pt-6 text-xs text-neutral-600">
+          <span>
+            © 2026{" "}
+            <a
+              href="https://github.com/xam-dev-ux"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition hover:text-neutral-400"
+            >
+              xam-dev-ux
+            </a>
+          </span>
+          <Link href="/terms" className="transition hover:text-neutral-400">
+            Terms &amp; Copyright
+          </Link>
+          <a
+            href="https://github.com/xam-dev-ux/slate-base"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="transition hover:text-neutral-400"
+          >
+            Source (MIT)
+          </a>
+        </div>
       </div>
     </footer>
   );
