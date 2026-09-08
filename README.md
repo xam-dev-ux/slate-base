@@ -291,7 +291,6 @@ permissive open source. In plain terms:
 | Fork it for testing, security research, or academic evaluation | Yes, no permission needed |
 | Run it in production with less than $10,000 aggregate TVL | Yes |
 | Run it in production commercially, or past $10,000 aggregate TVL | Requires a separate commercial license from the licensor |
-| Use it after 2029-09-08 | Unrestricted — the license converts automatically to MIT |
 
 Tests, deploy scripts, and the ported `TickMath` library (GPL-2.0, upstream from
 `aerodrome-finance/slipstream`) keep their own, more permissive licenses — see each file's SPDX
