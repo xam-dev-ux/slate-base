@@ -94,7 +94,10 @@ const client = createPublicClient({
   // aggressively, and this route had no retry at all, failing a whole deposit's quote on a single
   // transient 429 instead of riding it out.
   transport: http(process.env.NEXT_PUBLIC_RPC_URL ?? "https://mainnet.base.org", {
-    batch: { batchSize: 50, wait: 50 },
+    // Capped at 8, not a round number: mainnet.base.org rejects any batch over 10 JSON-RPC calls
+    // outright (error -32014) and fails every call in it, not just the excess ones — see the same
+    // note on the client transport in lib/config.ts, where this was discovered.
+    batch: { batchSize: 8, wait: 50 },
     // Four legs quoted in parallel (below) hit the public RPC's rate limit more often than a
     // single call would even with the batching above, since Promise.all still issues the calls
     // as fast as they resolve into the batch window — bumped retries higher than the client

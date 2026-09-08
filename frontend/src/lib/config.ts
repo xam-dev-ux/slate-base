@@ -56,8 +56,15 @@ export const wagmiConfig = createConfig({
     // requests close together, which this app routinely does. `batch` folds JSON-RPC calls made in
     // the same tick into one HTTP request instead of one each; the wider retry spacing gives the
     // limiter time to reset instead of hammering it again a moment later.
+    //
+    // batchSize is capped by the endpoint itself, not just a performance knob: mainnet.base.org
+    // rejects a whole batch outright ("maximum 10 calls in 1 batch", JSON-RPC error -32014) once
+    // it holds more than 10 entries — and it fails every call in the batch, not just the excess
+    // ones. With several hooks (share info, oracle health, corporate actions...) all reading on
+    // the same page, a size of 50 let enough calls land in one tick to trip that limit, which is
+    // why fund name, feed freshness, etc. would all go blank together instead of one at a time.
     [base.id]: http(process.env.NEXT_PUBLIC_RPC_URL ?? "https://mainnet.base.org", {
-      batch: { batchSize: 50, wait: 50 },
+      batch: { batchSize: 8, wait: 50 },
       // Stacked on top of react-query's own retries, 5×1s here could compound into a minute-plus
       // wait before a query ever reaches an error state a user can act on (see the fund page's
       // log scans) — 3 is enough to ride out a transient 429 without disappearing that long.
