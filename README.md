@@ -172,4 +172,10 @@ Both targets run `check-keystore` first and require confirmation before broadcas
 
 ## Licence
 
-MIT.
+The core contracts (`src/SlateFund.sol`, `src/SlateFactory.sol`,
+`src/libraries/TwapOracle.sol`) are licensed under [BUSL 1.1](./LICENSE):
+free to read, fork, and use for testing, auditing, and non-commercial
+evaluation; commercial use or a fork whose TVL exceeds $10,000 requires a
+separate commercial license from the licensor. The license converts to MIT
+on 2029-09-08. Tests, scripts, and the ported `TickMath` library keep their
+own, more permissive licenses — see each file's SPDX header.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.20;
 
 import {B20Constants} from "base-std/lib/B20Constants.sol";

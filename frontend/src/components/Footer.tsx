@@ -5,7 +5,7 @@ export function Footer() {
     <footer className="mt-24 border-t border-white/10 bg-black/20">
       <div className="mx-auto max-w-6xl px-6 py-10">
         <p className="text-xs leading-relaxed text-neutral-500">
-          Slate is open-source experimental software. It is not affiliated with, endorsed by, or
+          Slate is source-available experimental software. It is not affiliated with, endorsed by, or
           operated by Coinbase, Coinbase Onchain SPV Ltd, Base, Chainlink, Aerodrome, or any other
           party mentioned. Coinbase Tokenized Stocks are securities issued by Coinbase Onchain SPV
           Ltd under FSRA regulation, offered under Regulation S, and are not available to US
@@ -36,7 +36,7 @@ export function Footer() {
             rel="noopener noreferrer"
             className="transition hover:text-neutral-400"
           >
-            Source (MIT)
+            Source (BUSL 1.1)
           </a>
         </div>
       </div>
