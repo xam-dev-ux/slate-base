@@ -74,9 +74,12 @@ export function Header() {
             >
               Portfolio
             </Link>
-            <div onClick={() => setMenuOpen(false)}>
-              <HowItWorksModal />
-            </div>
+            {/* No close-on-click wrapper here, unlike the Links above: closing the mobile menu
+                unmounts this whole subtree, and since the click that opens the modal bubbles up
+                to a parent onClick just as readily as one that should close the menu, that wrapper
+                was unmounting HowItWorksModal (and its `open` state) before the portal could ever
+                render — the modal simply never appeared on mobile. */}
+            <HowItWorksModal />
             <MarketSessionBadge />
           </nav>
         </div>
