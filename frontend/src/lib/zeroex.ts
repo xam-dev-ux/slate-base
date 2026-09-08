@@ -1,5 +1,4 @@
 import type { Address } from "viem";
-import { BUILDER_CODE } from "./config";
 
 export type SwapLeg = {
   token: Address;
@@ -7,38 +6,6 @@ export type SwapLeg = {
   data: `0x${string}`;
   buyAmount: bigint;
 };
-
-/// Base Builder Code attribution is an ERC-8021 calldata suffix, not an API parameter: the code is
-/// appended to the transaction's `data` after the swap calldata, ending in a repeating `8021`
-/// marker so indexers can find it by scanning backwards. Unrelated to 0x's own affiliate-fee
-/// query params — this is Base's attribution standard.
-///
-/// Layout: <ascii code bytes><length byte><schema id 0x00><8021 marker>
-export function buildErc8021Suffix(code: string): `0x${string}` | undefined {
-  if (!code) return undefined;
-  const encoder = new TextEncoder();
-  const codeBytes = encoder.encode(code);
-  if (codeBytes.length === 0 || codeBytes.length > 255) return undefined;
-
-  const hex = (bytes: Uint8Array) =>
-    Array.from(bytes)
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-
-  const marker = "8021".repeat(8); // 16-byte ERC-8021 marker
-  const lengthByte = codeBytes.length.toString(16).padStart(2, "0");
-  const schemaId = "00";
-
-  return `0x${hex(codeBytes)}${lengthByte}${schemaId}${marker}`;
-}
-
-/// Appends the Builder Code suffix to swap calldata. Never blocks a swap: with no code
-/// configured, the calldata passes through untouched.
-export function withBuilderCode(data: `0x${string}`): `0x${string}` {
-  const suffix = buildErc8021Suffix(BUILDER_CODE);
-  if (!suffix) return data;
-  return `${data}${suffix.slice(2)}` as `0x${string}`;
-}
 
 /// Requests one Aerodrome quote per leg. Runs server-side (see app/api/quote) so the RPC calls
 /// used to build swap calldata don't add to the client's own request volume.
@@ -95,7 +62,7 @@ async function fetchQuoteLegs(params: {
     token: l.token,
     sellAmount: BigInt(l.sellAmount),
     buyAmount: BigInt(l.buyAmount),
-    data: withBuilderCode(l.data),
+    data: l.data,
   }));
 }
 

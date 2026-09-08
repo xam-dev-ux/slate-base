@@ -11,6 +11,7 @@ import {
 } from "@rainbow-me/rainbowkit/wallets";
 import { farcasterMiniApp } from "@farcaster/miniapp-wagmi-connector";
 import type { Address } from "viem";
+import { Attribution } from "ox/erc8021";
 
 export const CHAIN = base;
 
@@ -23,6 +24,16 @@ export const CHAIN = base;
 export const GENESIS_BLOCK = 50_984_267n;
 
 const wcProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "";
+
+/// Base Builder Code, attached to every transaction as an ERC-8021 calldata suffix. Optional by
+/// design — when unset, transactions still work, just without attribution. This has to be wired
+/// in at the wagmi client level (`dataSuffix` below), not appended to some inner call's own
+/// calldata: Base's indexer reads the suffix off the tail of the actual signed transaction, and
+/// an earlier version of this app appended it to the Aerodrome swap leg's calldata instead — data
+/// that ends up nested inside a `bytes[]` argument of the outer `deposit`/`rebalance` call, never
+/// at the end of the transaction that was actually sent. That's why base.dev showed zero
+/// attributed transactions despite real usage.
+export const BUILDER_CODE = process.env.NEXT_PUBLIC_BUILDER_CODE ?? "";
 
 /// Plain wagmi connectors (injected(), coinbaseWallet() from "wagmi/connectors", etc.) work, but
 /// RainbowKit's own modal only renders its "detected wallet" list — MetaMask, Rabby, and so on —
@@ -72,6 +83,11 @@ export const wagmiConfig = createConfig({
       retryDelay: 750,
     }),
   },
+  // Appends the Builder Code to every transaction's calldata automatically — deposit, approve,
+  // rebalance, share transfer, all of it — instead of hand-crafting the suffix at each call site.
+  // wagmi's CreateConfigParameters forwards viem's ClientConfig keys generically (see
+  // @wagmi/core's createConfig.d.ts), so this is genuinely typed, not slipping through untyped.
+  dataSuffix: BUILDER_CODE ? Attribution.toDataSuffix({ codes: [BUILDER_CODE] }) : undefined,
   ssr: true,
 });
 
@@ -94,10 +110,6 @@ export const CONFIGURED_FUNDS: Address[] = (process.env.NEXT_PUBLIC_FUND_ADDRESS
   .split(",")
   .map((s) => s.trim())
   .filter((s): s is Address => /^0x[0-9a-fA-F]{40}$/.test(s));
-
-/// Base Builder Code, attached to swaps as an ERC-8021 calldata suffix. Optional by design —
-/// when unset, swaps still work, just without attribution.
-export const BUILDER_CODE = process.env.NEXT_PUBLIC_BUILDER_CODE ?? "";
 
 export const EXPLORER = "https://basescan.org";
 
