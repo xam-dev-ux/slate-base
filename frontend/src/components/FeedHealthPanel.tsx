@@ -58,7 +58,11 @@ export function FeedHealthPanel({
               {shortAddress(f.feed)}
             </a>
             <span className="ml-auto text-xs text-neutral-400">
-              {f.ageSeconds !== undefined ? formatRelativeTime(f.ageSeconds) : "—"}
+              {f.ageSeconds !== undefined
+                ? formatRelativeTime(f.ageSeconds)
+                : feeds.isLoading
+                  ? "Loading…"
+                  : "—"}
             </span>
           </li>
         ))}

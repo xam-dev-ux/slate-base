@@ -14,6 +14,7 @@ import {
   type TimelineEntry,
 } from "@/components/PersonalTimeline";
 import { AddToWalletButton } from "@/components/AddToWalletButton";
+import { TransferShareButton } from "@/components/TransferShareButton";
 
 function PositionRow({ fund, user }: { fund: Address; user: Address }) {
   const summary = useFundSummary(fund);
@@ -82,7 +83,10 @@ function PositionRow({ fund, user }: { fund: Address; user: Address }) {
       <div className="min-w-[180px]">
         <p className="font-medium text-white">{share.name ?? "…"}</p>
         <p className="mt-0.5 font-mono text-xs text-neutral-500">{share.symbol}</p>
-        {summary.share && <AddToWalletButton address={summary.share} symbol={share.symbol} />}
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+          {summary.share && <AddToWalletButton address={summary.share} symbol={share.symbol} />}
+          {summary.share && <TransferShareButton share={summary.share} balance={balance} />}
+        </div>
       </div>
 
       <div>
@@ -135,6 +139,11 @@ export default function PortfolioPage() {
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
       <h1 className="text-3xl font-semibold tracking-tight text-white">Portfolio</h1>
+      <p className="mt-2 max-w-2xl text-xs leading-relaxed text-neutral-500">
+        Each position below is a standard B20 token sitting in your own wallet, not a database
+        row — send it, hold it, or use it as collateral. Exiting the fund doesn&apos;t require
+        redeeming through the app; selling or transferring the token works just as well.
+      </p>
 
       {!isConnected || !user ? (
         <div className="mt-8 rounded-xl border border-dashed border-white/10 bg-white/[0.02] p-12 text-center">
