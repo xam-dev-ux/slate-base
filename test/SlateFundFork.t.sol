@@ -69,7 +69,13 @@ contract SlateFundForkTest is Test {
             0x0000000000001fF3684f28c67538d4D072C22734, // 0x AllowanceHolder on Base
             address(this),
             comps,
-            "Equal-weight basket of the four Coinbase Tokenized Stocks with established onchain liquidity."
+            "Equal-weight basket of the four Coinbase Tokenized Stocks with established onchain liquidity.",
+            SlateFund.ProtectionConfig({
+                sequencerUptimeFeed: address(0),
+                pyth: address(0),
+                protocolFeeRecipient: address(0),
+                protocolFeeBps: 0
+            })
         );
         share = fund.SHARE();
     }

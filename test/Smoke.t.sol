@@ -25,7 +25,13 @@ contract SmokeTest is Test {
             address(0xBEEF),
             address(this),
             components,
-            "Test fund"
+            "Test fund",
+            SlateFund.ProtectionConfig({
+                sequencerUptimeFeed: address(0),
+                pyth: address(0),
+                protocolFeeRecipient: address(0),
+                protocolFeeBps: 0
+            })
         );
 
         assertEq(fund.componentsLength(), 1);

@@ -18,7 +18,9 @@ contract DeployForkTest is Test {
 
     function setUp() public {
         vm.createSelectFork(vm.envOr("MAINNET_RPC_URL", string("https://mainnet.base.org")), FORK_BLOCK);
-        factory = new SlateFactory(SlateAddresses.USDC, SlateAddresses.AERODROME_SWAP_ROUTER);
+        factory = new SlateFactory(
+            SlateAddresses.USDC, SlateAddresses.AERODROME_SWAP_ROUTER, address(0), address(0), address(0), 0
+        );
     }
 
     function test_fork_deploysBothCuratedFunds() public {

@@ -12,6 +12,16 @@ contract SlateFactory {
     address public immutable USDC;
     address public immutable SWAP_ROUTER;
 
+    /// @notice Forwarded verbatim into every fund this factory deploys — see
+    ///         `SlateFund.ProtectionConfig` for what each does. Fixed once here, at factory
+    ///         deployment, specifically so that no individual fund's operator (anyone, since this
+    ///         factory is permissionless) can change the protocol fee recipient or rate for their
+    ///         own fund after the fact.
+    address public immutable SEQUENCER_UPTIME_FEED;
+    address public immutable PYTH;
+    address public immutable PROTOCOL_FEE_RECIPIENT;
+    uint16 public immutable PROTOCOL_FEE_BPS;
+
     address[] public funds;
     mapping(address => bool) public isFund;
 
@@ -21,9 +31,20 @@ contract SlateFactory {
 
     error OutOfRange();
 
-    constructor(address usdc, address swapRouter) {
+    constructor(
+        address usdc,
+        address swapRouter,
+        address sequencerUptimeFeed,
+        address pyth,
+        address protocolFeeRecipient,
+        uint16 protocolFeeBps
+    ) {
         USDC = usdc;
         SWAP_ROUTER = swapRouter;
+        SEQUENCER_UPTIME_FEED = sequencerUptimeFeed;
+        PYTH = pyth;
+        PROTOCOL_FEE_RECIPIENT = protocolFeeRecipient;
+        PROTOCOL_FEE_BPS = protocolFeeBps;
     }
 
     /// @notice Deploys a new `SlateFund` with `msg.sender` as its operator.
@@ -34,8 +55,22 @@ contract SlateFactory {
         SlateFund.ComponentInput[] calldata components,
         string calldata indexRule
     ) external returns (address fund) {
-        SlateFund newFund =
-            new SlateFund(salt, shareName, shareSymbol, USDC, SWAP_ROUTER, msg.sender, components, indexRule);
+        SlateFund newFund = new SlateFund(
+            salt,
+            shareName,
+            shareSymbol,
+            USDC,
+            SWAP_ROUTER,
+            msg.sender,
+            components,
+            indexRule,
+            SlateFund.ProtectionConfig({
+                sequencerUptimeFeed: SEQUENCER_UPTIME_FEED,
+                pyth: PYTH,
+                protocolFeeRecipient: PROTOCOL_FEE_RECIPIENT,
+                protocolFeeBps: PROTOCOL_FEE_BPS
+            })
+        );
         fund = address(newFund);
 
         funds.push(fund);

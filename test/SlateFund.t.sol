@@ -52,7 +52,13 @@ contract SlateFundTest is Test {
             address(router),
             address(this),
             comps,
-            "Equal-weight two-component test basket."
+            "Equal-weight two-component test basket.",
+            SlateFund.ProtectionConfig({
+                sequencerUptimeFeed: address(0),
+                pyth: address(0),
+                protocolFeeRecipient: address(0),
+                protocolFeeBps: 0
+            })
         );
         share = fund.SHARE();
 
@@ -859,7 +865,20 @@ contract SlateFundTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(SlateFund.DuplicateComponent.selector, address(tokenA)));
         new SlateFund(
-            bytes32(uint256(77)), "Dup", "DUP", address(usdc), address(router), address(this), comps, "dup"
+            bytes32(uint256(77)),
+            "Dup",
+            "DUP",
+            address(usdc),
+            address(router),
+            address(this),
+            comps,
+            "dup",
+            SlateFund.ProtectionConfig({
+                sequencerUptimeFeed: address(0),
+                pyth: address(0),
+                protocolFeeRecipient: address(0),
+                protocolFeeBps: 0
+            })
         );
     }
 
@@ -1004,7 +1023,13 @@ contract SlateFundTest is Test {
             address(evil),
             address(this),
             comps,
-            "probe"
+            "probe",
+            SlateFund.ProtectionConfig({
+                sequencerUptimeFeed: address(0),
+                pyth: address(0),
+                protocolFeeRecipient: address(0),
+                protocolFeeBps: 0
+            })
         );
         IB20Asset evilShare = evilFund.SHARE();
 
@@ -1057,7 +1082,13 @@ contract SlateFundTest is Test {
             address(evil),
             address(this),
             comps,
-            "probe"
+            "probe",
+            SlateFund.ProtectionConfig({
+                sequencerUptimeFeed: address(0),
+                pyth: address(0),
+                protocolFeeRecipient: address(0),
+                protocolFeeBps: 0
+            })
         );
 
         // While a deposit is mid-flight, the router tries to re-enter the fund.

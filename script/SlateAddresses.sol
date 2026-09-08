@@ -24,6 +24,22 @@ library SlateAddresses {
     ///         sole call target and validates every outcome against Chainlink regardless.
     address internal constant AERODROME_SWAP_ROUTER = 0x698Cb2b6dd822994581fEa6eA4Fc755d1363A92F;
 
+    /// @notice Chainlink's L2 sequencer uptime feed for Base — NOT independently verified against
+    ///         Chainlink's own current feed address listing before being written here. Left at
+    ///         address(0) (check disabled) deliberately rather than risk deploying against a wrong
+    ///         address, which would be worse than having no check at all: it could silently read
+    ///         from a contract that isn't actually the uptime feed. Confirm the real address on
+    ///         https://docs.chain.link/data-feeds/l2-sequencer-feeds before setting this.
+    address internal constant SEQUENCER_UPTIME_FEED = address(0);
+
+    /// @notice Pyth's price contract on Base — left disabled for the same reason as the pool
+    ///         constants weren't guessed: enabling the cross-check per component (`setPythPriceId`
+    ///         on the deployed fund) requires first confirming a real Pyth price feed ID exists for
+    ///         that specific tokenized stock at https://pyth.network/developers/price-feed-ids, not
+    ///         assuming Pyth covers Coinbase's tokenized stocks the same way it covers the
+    ///         underlying equities.
+    address internal constant PYTH = address(0);
+
     /*//////////////////////////////////////////////////////////////
                           COMPONENTS AND FEEDS
     //////////////////////////////////////////////////////////////*/

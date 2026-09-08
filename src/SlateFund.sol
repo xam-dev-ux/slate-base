@@ -17,6 +17,29 @@ interface IAggregatorV3 {
     function decimals() external view returns (uint8);
 }
 
+/// @dev Chainlink's L2 sequencer uptime feed shares the aggregator shape, but `answer` means
+///      something different here: 0 is up, 1 is down. `startedAt` is when the *current* status
+///      began, which is what the grace period below is measured from.
+interface ISequencerUptimeFeed {
+    function latestRoundData()
+        external
+        view
+        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
+}
+
+/// @dev Pyth's pull-oracle shape. `expo` is a signed decimal exponent — the real price is
+///      `price * 10**expo`, not `price` scaled by a fixed decimals count like Chainlink.
+interface IPyth {
+    struct Price {
+        int64 price;
+        uint64 conf;
+        int32 expo;
+        uint256 publishTime;
+    }
+
+    function getPriceUnsafe(bytes32 id) external view returns (Price memory price);
+}
+
 /// @title SlateFund
 /// @notice Onchain index fund over a fixed basket of Coinbase Tokenized Stocks (B20 assets).
 ///         Custodies the underlying components, mints/burns a B20 share token 1:1 with NAV,
@@ -51,6 +74,31 @@ contract SlateFund {
         address pool;
     }
 
+    /// @notice Fund-level protections that don't vary per component, grouped into one struct so
+    ///         the constructor's positional argument list doesn't grow every time one is added.
+    ///         All four default safely closed at address(0)/zero — a fund deployed with every
+    ///         field zeroed behaves exactly as this contract did before any of them existed.
+    struct ProtectionConfig {
+        /// @notice Chainlink's L2 sequencer uptime feed for this chain. address(0) disables the
+        ///         check entirely (tests, or a chain with no such feed) rather than reverting
+        ///         every price read against a feed that doesn't exist.
+        address sequencerUptimeFeed;
+        /// @notice Pyth's pull-oracle contract. address(0) disables cross-checking entirely, and
+        ///         a component with no `pythPriceId` set (see below) is also skipped individually
+        ///         — this is opt-in per token, not on-by-default, because it requires confirming
+        ///         a real Pyth price feed ID exists for that specific tokenized stock first.
+        address pyth;
+        /// @notice Fixed at construction, forwarded by the factory from its own immutable config —
+        ///         never settable by a fund's own operator. A permissionless factory means anyone
+        ///         can become a fund's operator by deploying through it; if the operator could set
+        ///         their own recipient, this would capture nothing for the protocol.
+        address protocolFeeRecipient;
+        /// @notice Bounded at construction and immutable after — see the require below. Charged on
+        ///         traded value in `rebalance()` and on `usdcOut` in `redeem()`, never on
+        ///         `redeemInKind`, which must stay frictionless as the unconditional exit.
+        uint16 protocolFeeBps;
+    }
+
     /*//////////////////////////////////////////////////////////////
                                  STORAGE
     //////////////////////////////////////////////////////////////*/
@@ -59,6 +107,27 @@ contract SlateFund {
     address public immutable USDC;
     address public immutable SWAP_ROUTER;
     address public immutable OPERATOR;
+
+    address public immutable SEQUENCER_UPTIME_FEED;
+    /// @notice How long to distrust prices after the sequencer comes back up. Chainlink can
+    ///         deliver a report immediately post-restart whose timestamp looks fresh but was
+    ///         formed while the sequencer — and therefore true onchain price discovery — was
+    ///         down; the grace period is what keeps that from being trusted as "live".
+    uint256 public constant SEQUENCER_GRACE_PERIOD = 1 hours;
+
+    address public immutable PYTH;
+    /// @notice Per-token opt-in: bytes32(0) means this component has no Pyth cross-check, which is
+    ///         the default for every component until the operator explicitly wires one up via
+    ///         `setPythPriceId` — deliberately not a constructor argument, since verifying a real
+    ///         Pyth feed ID exists for a specific tokenized stock is a step that has to happen
+    ///         after research, not be guessed at deploy time.
+    mapping(address => bytes32) public pythPriceId;
+    /// @notice How far Chainlink and Pyth are allowed to disagree before a price read reverts as
+    ///         a probable de-peg or oracle fault, rather than ordinary cross-venue noise.
+    uint16 public pythMaxDivergenceBps = 300; // 3%
+
+    address public immutable PROTOCOL_FEE_RECIPIENT;
+    uint16 public immutable PROTOCOL_FEE_BPS;
 
     Component[] public components;
 
@@ -143,6 +212,8 @@ contract SlateFund {
     );
     event ParamsUpdated(string param, uint256 oldValue, uint256 newValue);
     event DepositsPausedSet(bool paused);
+    event ProtocolFeeCharged(uint256 amount, string context);
+    event PythPriceIdSet(address indexed token, bytes32 priceId);
 
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
@@ -176,6 +247,9 @@ contract SlateFund {
     error FundHasOrphanedAssets(uint256 strandedValue);
     error NothingDelivered();
     error InsufficientGasForTransfer(address token);
+    error SequencerDown();
+    error SequencerGracePeriodNotOver();
+    error PriceDivergence(address token, uint256 chainlinkPrice, uint256 pythPrice);
 
     /*//////////////////////////////////////////////////////////////
                                 MODIFIERS
@@ -205,11 +279,25 @@ contract SlateFund {
         address swapRouter,
         address operator,
         ComponentInput[] memory initialComponents,
-        string memory indexRuleDescription
+        string memory indexRuleDescription,
+        ProtectionConfig memory protection
     ) {
         USDC = usdc;
         SWAP_ROUTER = swapRouter;
         OPERATOR = operator;
+
+        SEQUENCER_UPTIME_FEED = protection.sequencerUptimeFeed;
+        PYTH = protection.pyth;
+        PROTOCOL_FEE_RECIPIENT = protection.protocolFeeRecipient;
+        // A recipient of address(0) with a non-zero rate would silently burn that share of every
+        // trade — caught here once, at construction, rather than left to be discovered later.
+        if (protection.protocolFeeBps > 0 && protection.protocolFeeRecipient == address(0)) {
+            revert OutOfBounds();
+        }
+        // Same ceiling philosophy as every other operator-bounded parameter: high enough to be a
+        // real monetization lever, low enough that it can never be mistaken for a fund-drain path.
+        if (protection.protocolFeeBps > 100) revert OutOfBounds(); // 1% ceiling
+        PROTOCOL_FEE_BPS = protection.protocolFeeBps;
 
         uint16 totalWeight;
         for (uint256 i = 0; i < initialComponents.length; i++) {
@@ -355,12 +443,23 @@ contract SlateFund {
         }
         if (usdcOut == 0) revert ZeroShares();
 
+        // Deducted from the same `usdcOut` that both gates the call above and is what actually
+        // gets transferred below — not a separate transfer bolted on afterward. Removing this in
+        // a fork means rewriting the payout calculation itself, not deleting one line.
+        uint256 fee = (usdcOut * PROTOCOL_FEE_BPS) / 10_000;
+        if (fee > 0) {
+            usdcOut -= fee;
+            require(IB20(USDC).transfer(PROTOCOL_FEE_RECIPIENT, fee), "TRANSFER_FAILED");
+            emit ProtocolFeeCharged(fee, "redeem");
+        }
+
         require(IB20(USDC).transfer(msg.sender, usdcOut), "TRANSFER_FAILED");
 
         // Deliberately not re-pricing the fund here. The payout above is derived entirely from
         // balances, so calling totalNAV() only to fill an event field would let one stale feed —
         // on a component this redemption may not even have touched — revert an exit that had
-        // already completed.
+        // already completed. `usdcOut` here is net of the protocol fee — what the holder actually
+        // received.
         emit Redeemed(msg.sender, shareAmount, usdcOut, supply - shareAmount);
     }
 
@@ -521,6 +620,17 @@ contract SlateFund {
         if (reward > cash) reward = cash;
         if (reward > 0) require(IB20(USDC).transfer(msg.sender, reward), "TRANSFER_FAILED");
 
+        // Same shape as the caller reward directly above — charged on value actually traded, capped
+        // by what cash remains once the reward is already paid, so the two can never combine to
+        // pull out more than the fund has on hand.
+        uint256 protocolFee = (tradedValue * PROTOCOL_FEE_BPS) / 10_000;
+        uint256 cashAfterReward = cash - reward;
+        if (protocolFee > cashAfterReward) protocolFee = cashAfterReward;
+        if (protocolFee > 0) {
+            require(IB20(USDC).transfer(PROTOCOL_FEE_RECIPIENT, protocolFee), "TRANSFER_FAILED");
+            emit ProtocolFeeCharged(protocolFee, "rebalance");
+        }
+
         string memory id = string.concat("rebalance-", _toString(rebalanceCount));
         SHARE.announce(new bytes[](0), id, reason, "");
 
@@ -592,6 +702,11 @@ contract SlateFund {
 
     /// @notice Are all feeds fresh enough to price the fund right now?
     function feedsHealthy() external view returns (bool healthy, address staleFeed) {
+        // Mirrors `_checkSequencer`, but reports rather than reverts — this is a read for display,
+        // not a priced call. `SEQUENCER_UPTIME_FEED` doubles as the "which thing is unhealthy"
+        // address here, the same way a stale component's own feed address is returned below.
+        if (!_sequencerHealthy()) return (false, SEQUENCER_UPTIME_FEED);
+
         uint256 n = components.length;
         for (uint256 i = 0; i < n; i++) {
             (, int256 answer,, uint256 updatedAt,) = IAggregatorV3(components[i].feed).latestRoundData();
@@ -672,6 +787,24 @@ contract SlateFund {
         twapWindow = w;
     }
 
+    /// @notice Wires up (or clears, with `id == bytes32(0)`) the Pyth cross-check for one
+    ///         component. Deliberately not set at construction — enabling this for a component
+    ///         requires having first confirmed a real Pyth price feed exists for that specific
+    ///         tokenized stock, which is research, not a deploy-time guess. Has no effect at all
+    ///         if the fund's immutable `PYTH` address is unset.
+    function setPythPriceId(address token, bytes32 id) external onlyOperator {
+        pythPriceId[token] = id;
+        emit PythPriceIdSet(token, id);
+    }
+
+    function setPythMaxDivergenceBps(uint16 bps) external onlyOperator {
+        // A floor for the same reason as maxSlippageBps's: zero tolerance would treat ordinary
+        // cross-venue noise between two independent oracles as a de-peg on every single read.
+        if (bps < 50 || bps > 1000) revert OutOfBounds();
+        emit ParamsUpdated("pythMaxDivergenceBps", pythMaxDivergenceBps, bps);
+        pythMaxDivergenceBps = bps;
+    }
+
     /// @notice Caps are the only compensating control on an unaudited contract, so they are bounded
     ///         like every other parameter rather than settable to anything.
     function setCaps(uint256 perWallet, uint256 fundValue) external onlyOperator {
@@ -727,11 +860,19 @@ contract SlateFund {
     }
 
     function _priceWithMaxAge(Component memory c, uint256 maxAge) internal view returns (uint256 answer) {
+        // Every priced call funnels through here, so this is the single choke point for the
+        // sequencer check — a component's own feed can look perfectly fresh by timestamp seconds
+        // after the sequencer restarts, while the price it delivered was formed with no real
+        // onchain trading happening to discover it.
+        _checkSequencer();
+
         (, int256 a,, uint256 updatedAt,) = IAggregatorV3(c.feed).latestRoundData();
         bool fresh = a > 0 && block.timestamp - updatedAt <= maxAge;
         if (fresh) {
             // forge-lint: disable-next-line(unsafe-typecast)
-            return uint256(a);
+            uint256 chainlinkPrice = uint256(a);
+            _checkPythDivergence(c, chainlinkPrice);
+            return chainlinkPrice;
         }
         // Falls back only if the operator opted in and this component has a pool configured —
         // both conditions default closed, so an unconfigured deploy reverts exactly as it always
@@ -740,6 +881,56 @@ contract SlateFund {
             return TwapOracle.twapAnswer(c.pool, twapWindow, c.tokenDecimals, c.feedDecimals);
         }
         revert StaleFeed(c.feed, updatedAt);
+    }
+
+    /// @dev Reverts if the sequencer is down, or hasn't been up long enough to trust yet. A no-op
+    ///      when `SEQUENCER_UPTIME_FEED` is unset, so a fund deployed without one behaves exactly
+    ///      as this contract did before the check existed.
+    function _checkSequencer() internal view {
+        if (!_sequencerHealthy()) {
+            (, int256 answer,,,) = ISequencerUptimeFeed(SEQUENCER_UPTIME_FEED).latestRoundData();
+            if (answer != 0) revert SequencerDown();
+            revert SequencerGracePeriodNotOver();
+        }
+    }
+
+    function _sequencerHealthy() internal view returns (bool) {
+        if (SEQUENCER_UPTIME_FEED == address(0)) return true;
+        (, int256 answer, uint256 startedAt,,) = ISequencerUptimeFeed(SEQUENCER_UPTIME_FEED).latestRoundData();
+        if (answer != 0) return false;
+        return block.timestamp - startedAt >= SEQUENCER_GRACE_PERIOD;
+    }
+
+    /// @dev No-op unless the fund has a Pyth contract configured AND this specific component has
+    ///      an operator-verified price feed ID — both default off, per component and per fund, so
+    ///      this only ever runs where someone has deliberately opted in.
+    function _checkPythDivergence(Component memory c, uint256 chainlinkPrice) internal view {
+        if (PYTH == address(0)) return;
+        bytes32 priceId = pythPriceId[c.token];
+        if (priceId == bytes32(0)) return;
+
+        IPyth.Price memory p = IPyth(PYTH).getPriceUnsafe(priceId);
+        if (p.price <= 0) return; // Pyth itself reporting nothing usable is not this check's job.
+
+        // Normalize Pyth's signed-exponent price onto the same `feedDecimals` scale Chainlink's
+        // answer is already in, so the two are comparable directly.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint256 pythPrice = _scalePythPrice(uint256(int256(p.price)), p.expo, c.feedDecimals);
+
+        uint256 diff = pythPrice > chainlinkPrice ? pythPrice - chainlinkPrice : chainlinkPrice - pythPrice;
+        uint256 diffBps = (diff * 10_000) / chainlinkPrice;
+        if (diffBps > pythMaxDivergenceBps) revert PriceDivergence(c.token, chainlinkPrice, pythPrice);
+    }
+
+    /// @dev Pyth prices are `price * 10**expo`; this rescales that onto `targetDecimals` (the
+    ///      component's own feed decimals) so it lands in the same units as the Chainlink answer
+    ///      it's being compared against, regardless of which one uses more decimal places.
+    function _scalePythPrice(uint256 rawPrice, int32 expo, uint8 targetDecimals) internal pure returns (uint256) {
+        // Pyth's expo is negative for every real-world price feed (e.g. -8 means 8 decimals), so
+        // targetDecimals + expo is the net power of ten still needed to reach targetDecimals.
+        int256 shift = int256(uint256(targetDecimals)) + int256(expo);
+        if (shift >= 0) return rawPrice * (10 ** uint256(shift));
+        return rawPrice / (10 ** uint256(-shift));
     }
 
     function _componentValue(uint256 index) internal view returns (uint256) {
