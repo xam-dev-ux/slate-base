@@ -343,13 +343,16 @@ Open BaseScan, show the `Announcement` event with the literal text.
 
 ## Draft submission post
 
-> Slate: onchain index funds of Coinbase Tokenized Stocks, live on @base.
+> Slate: onchain index funds of Coinbase Tokenized Stocks, live on Base.
 >
 > Deposit USDC, hold a basket of tokenized equities. When weights drift, anyone can trigger the
 > rebalance and earn the fee — no keeper, no backend with keys.
 >
-> Every rebalance writes its reason onchain. Read them yourself:
-> [URL]
+> Every rebalance writes its reason onchain. Read them yourself, in the demo below 👇
+>
+> @buildonbase
+>
+> [Loom link]
 
 ## Verification checklist
 
