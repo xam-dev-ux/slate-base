@@ -94,34 +94,40 @@ export function RedeemInKindButton({
         token directly. No swaps, no router, no oracle — this works even when markets are closed.
       </p>
 
-      <div className="mt-4 flex flex-wrap gap-3">
-        {needsApproval ? (
+      {/* Once redeemInKind confirms, `shares` here is a snapshot of a balance the holder no
+          longer has — the parent's own read hasn't necessarily refetched yet. Leaving the button
+          live let a second click resubmit the same now-stale amount against a zero balance,
+          which is what the wallet's own preflight simulation was reacting to. */}
+      {!isSuccess && (
+        <div className="mt-4 flex flex-wrap gap-3">
+          {needsApproval ? (
+            <button
+              type="button"
+              onClick={approve}
+              disabled={isPending || isConfirming}
+              className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-400 disabled:bg-white/5 disabled:text-neutral-500"
+            >
+              {isPending || isConfirming ? "Confirming…" : "Approve shares"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={redeem}
+              disabled={isPending || isConfirming}
+              className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-400 disabled:bg-white/5 disabled:text-neutral-500"
+            >
+              {isPending || isConfirming ? "Confirming…" : "Redeem all shares"}
+            </button>
+          )}
           <button
             type="button"
-            onClick={approve}
-            disabled={isPending || isConfirming}
-            className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-400 disabled:bg-white/5 disabled:text-neutral-500"
+            onClick={() => setOpen(false)}
+            className="rounded-lg border border-white/15 px-4 py-2 text-sm text-neutral-300 transition hover:border-white/30"
           >
-            {isPending || isConfirming ? "Confirming…" : "Approve shares"}
+            Cancel
           </button>
-        ) : (
-          <button
-            type="button"
-            onClick={redeem}
-            disabled={isPending || isConfirming}
-            className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-400 disabled:bg-white/5 disabled:text-neutral-500"
-          >
-            {isPending || isConfirming ? "Confirming…" : "Redeem all shares"}
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          className="rounded-lg border border-white/15 px-4 py-2 text-sm text-neutral-300 transition hover:border-white/30"
-        >
-          Cancel
-        </button>
-      </div>
+        </div>
+      )}
 
       {blockedExit && !isSuccess && (
         <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
@@ -144,9 +150,18 @@ export function RedeemInKindButton({
       )}
 
       {isSuccess && (
-        <p className="mt-3 text-xs text-emerald-400">
-          Redeemed. The underlying tokens are in your wallet.
-        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <p className="text-xs text-emerald-400">
+            Redeemed. The underlying tokens are in your wallet.
+          </p>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-neutral-300 transition hover:border-white/30"
+          >
+            Close
+          </button>
+        </div>
       )}
     </div>
   );
