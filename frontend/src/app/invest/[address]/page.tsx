@@ -111,10 +111,18 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
   // approval actually lands onchain, so it still sees the old, too-low value and needsApproval
   // never flips. Refetching once the receipt confirms is what a wallet's own "wait for approval"
   // spinner is showing while it happens.
+  //
+  // A single refetch() isn't quite enough to trust blindly: some wallets briefly drop and
+  // re-emit the connected account around the moment a transaction confirms, which disables this
+  // query (`enabled: Boolean(user)`) for an instant — landing a refetch() exactly then is a
+  // silent no-op, not an error, and the button would stay stuck on "Approve" despite a genuinely
+  // successful approval. A couple of delayed follow-up attempts ride out that window without
+  // needing to know it happened.
   useEffect(() => {
-    if (isApproveSuccess) {
-      refetchAllowance();
-    }
+    if (!isApproveSuccess) return;
+    refetchAllowance();
+    const retries = [1000, 3000].map((delay) => setTimeout(() => refetchAllowance(), delay));
+    return () => retries.forEach(clearTimeout);
   }, [isApproveSuccess, refetchAllowance]);
 
   // Split the deposit by target weight — the fund validates each leg against Chainlink regardless.
@@ -351,6 +359,20 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
         {isApproveSuccess && !depositHash && (
           <p className="mt-4 text-sm text-emerald-400">
             USDC approved. Get a quote, then deposit below.
+            {needsApproval && (
+              <>
+                {" "}
+                Still showing "Approve"?{" "}
+                <button
+                  type="button"
+                  onClick={() => refetchAllowance()}
+                  className="underline decoration-dotted hover:text-emerald-300"
+                >
+                  Refresh
+                </button>
+                .
+              </>
+            )}
           </p>
         )}
 
