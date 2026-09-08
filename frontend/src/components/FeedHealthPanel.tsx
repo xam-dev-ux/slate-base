@@ -22,6 +22,20 @@ export function FeedHealthPanel({
         behind even during a session.
       </p>
 
+      {feeds.isRpcError && (
+        <p className="mt-3 flex items-center gap-2 text-xs text-amber-400">
+          Couldn&apos;t reach the RPC to check feed freshness — this is a rate limit on the public
+          endpoint, not the feeds themselves.
+          <button
+            type="button"
+            onClick={() => feeds.refetch()}
+            className="rounded border border-amber-500/30 px-2 py-0.5 text-amber-300 transition hover:border-amber-500/50"
+          >
+            Retry
+          </button>
+        </p>
+      )}
+
       <ul className="mt-4 space-y-2.5">
         {feeds.map((f) => (
           <li key={f.feed} className="flex items-center gap-3 text-sm">

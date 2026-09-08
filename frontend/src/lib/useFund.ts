@@ -303,7 +303,7 @@ export function useRebalanceHistory(fund: Address | undefined, share: Address | 
 
 /// Per-component feed freshness, for the health panel and the market-session banner.
 export function useFeedHealth(components: Component[], stalenessTolerance?: bigint) {
-  const { data } = useReadContracts({
+  const { data, isLoading, error, refetch } = useReadContracts({
     contracts: components.map((c) => ({
       address: c.feed,
       abi: [
@@ -329,7 +329,7 @@ export function useFeedHealth(components: Component[], stalenessTolerance?: bigi
   const now = useNowSeconds();
   const tolerance = Number(stalenessTolerance ?? 72n * 3600n);
 
-  return components.map((c, i) => {
+  const feeds = components.map((c, i) => {
     const result = data?.[i]?.result as
       | readonly [bigint, bigint, bigint, bigint, bigint]
       | undefined;
@@ -344,4 +344,9 @@ export function useFeedHealth(components: Component[], stalenessTolerance?: bigi
       isStale: ageSeconds !== undefined ? ageSeconds > tolerance : undefined,
     };
   });
+
+  // Attached to the array rather than changing the return shape — every caller already treats
+  // this as a plain array (.map, .some), and a rate-limited multicall here looks identical to
+  // "still loading" (every feed's ageSeconds stays undefined) without some way to tell them apart.
+  return Object.assign(feeds, { isLoading, isRpcError: Boolean(error), refetch });
 }
