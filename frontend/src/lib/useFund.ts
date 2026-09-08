@@ -113,7 +113,7 @@ export function useFundSummary(fund: Address | undefined) {
 
 /// Share-token identity plus the index rule the fund published on-chain at creation.
 export function useShareInfo(share: Address | undefined) {
-  const { data } = useReadContracts({
+  const { data, isLoading, error, refetch } = useReadContracts({
     contracts: [
       { address: share, abi: erc20Abi, functionName: "name" },
       { address: share, abi: erc20Abi, functionName: "symbol" },
@@ -125,6 +125,12 @@ export function useShareInfo(share: Address | undefined) {
   });
 
   return {
+    isLoading,
+    // Same distinction as useFundSummary's isRpcError: a rate-limited/timed-out multicall is not
+    // "still loading" — without this, callers can't tell the two apart and end up showing a
+    // "Loading…" placeholder that never resolves and never offers a retry.
+    isRpcError: Boolean(error),
+    refetch,
     name: data?.[0]?.result as string | undefined,
     symbol: data?.[1]?.result as string | undefined,
     totalSupply: data?.[2]?.result as bigint | undefined,

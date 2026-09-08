@@ -17,8 +17,12 @@ export function FundCard({ address }: { address: Address }) {
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-lg font-semibold text-white">{share.name ?? "Loading…"}</h3>
-          <p className="mt-0.5 font-mono text-xs text-neutral-500">{share.symbol ?? "—"}</p>
+          <h3 className="text-lg font-semibold text-white">
+            {share.name ?? (share.isRpcError ? "Couldn't load" : "Loading…")}
+          </h3>
+          <p className="mt-0.5 font-mono text-xs text-neutral-500">
+            {share.symbol ?? (share.isRpcError ? "RPC error — click to retry" : "—")}
+          </p>
         </div>
         {summary.depositsPaused && (
           <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-300">
