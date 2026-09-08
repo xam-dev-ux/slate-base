@@ -183,7 +183,9 @@ export function RebalancePanel({
           className={`rounded-full px-2 py-0.5 text-xs ${
             canAttempt
               ? "bg-emerald-500/10 text-emerald-300"
-              : "bg-white/5 text-neutral-400"
+              : pricingUnavailable || swapPricingStale
+                ? "bg-amber-500/10 text-amber-300"
+                : "bg-red-500/10 text-red-300"
           }`}
         >
           {canAttempt
