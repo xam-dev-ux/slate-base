@@ -26,13 +26,19 @@ export const GENESIS_BLOCK = 50_984_267n;
 const wcProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "";
 
 /// Base Builder Code, attached to every transaction as an ERC-8021 calldata suffix. Optional by
-/// design — when unset, transactions still work, just without attribution. This has to be wired
-/// in at the wagmi client level (`dataSuffix` below), not appended to some inner call's own
-/// calldata: Base's indexer reads the suffix off the tail of the actual signed transaction, and
-/// an earlier version of this app appended it to the Aerodrome swap leg's calldata instead — data
-/// that ends up nested inside a `bytes[]` argument of the outer `deposit`/`rebalance` call, never
-/// at the end of the transaction that was actually sent. That's why base.dev showed zero
-/// attributed transactions despite real usage.
+/// design — when unset, transactions still work, just without attribution. Base's indexer reads
+/// the suffix off the tail of the actual signed transaction; an earlier version of this app
+/// appended it to the Aerodrome swap leg's calldata instead, nested inside a `bytes[]` argument of
+/// the outer `deposit`/`rebalance` call rather than at the end of the sent transaction — invisible
+/// to the indexer despite real usage.
+///
+/// The `dataSuffix` set below on `createConfig` looks like the right fix per Base's own docs, but
+/// doesn't actually reach a signed transaction in this wagmi version: the wallet client that signs
+/// and sends is built fresh from the connector's own provider in `getConnectorClient`, which does
+/// not forward this config value onto it (confirmed by reading @wagmi/core's source). It's left
+/// set here anyway — harmless, and correct for the one path that does read it (a local/burner
+/// account via `config.getClient`) — but the write path this app actually uses needs it applied
+/// per call instead. See `lib/useAttributedWrite.ts`, which every write call site uses for this.
 export const BUILDER_CODE = process.env.NEXT_PUBLIC_BUILDER_CODE ?? "";
 
 /// Plain wagmi connectors (injected(), coinbaseWallet() from "wagmi/connectors", etc.) work, but

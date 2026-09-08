@@ -3,14 +3,10 @@
 import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { isAddress, parseUnits, type Address } from "viem";
-import {
-  useAccount,
-  useReadContract,
-  useWriteContract,
-  useWaitForTransactionReceipt,
-} from "wagmi";
+import { useAccount, useReadContract, useWaitForTransactionReceipt } from "wagmi";
 import { erc20Abi, slateFundAbi } from "@/lib/abis";
 import { USDC } from "@/lib/config";
+import { useAttributedWriteContract } from "@/lib/useAttributedWrite";
 import { useFundSummary, useShareInfo, useComponents, useFeedHealth } from "@/lib/useFund";
 import { formatUsd, formatShares, formatBps } from "@/lib/format";
 import { fetchSwapLegs, type SwapLeg } from "@/lib/zeroex";
@@ -77,7 +73,7 @@ export default function InvestPage({ params }: { params: Promise<{ address: stri
   const swapPricingStale =
     !twapFallbackEnabled && (swapPriceMaxAge === undefined || swapFeeds.some((f) => f.isStale));
 
-  const { writeContractAsync, isPending } = useWriteContract();
+  const { writeContractAsync, isPending } = useAttributedWriteContract();
   const { isLoading: isApproveConfirming, isSuccess: isApproveSuccess } =
     useWaitForTransactionReceipt({ hash: approveHash });
   const { isLoading: isDepositConfirming, isSuccess: isDepositSuccess } =

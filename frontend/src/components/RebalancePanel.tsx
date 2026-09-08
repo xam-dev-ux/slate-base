@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import type { Address } from "viem";
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { useAccount, useReadContract, useWaitForTransactionReceipt } from "wagmi";
+import { useAttributedWriteContract } from "@/lib/useAttributedWrite";
 import { slateFundAbi } from "@/lib/abis";
 import { formatUsd, formatBps, formatTimestamp } from "@/lib/format";
 import { useNowSeconds } from "@/lib/useNow";
@@ -70,7 +71,7 @@ export function RebalancePanel({
   const [submitted, setSubmitted] = useState<`0x${string}` | undefined>();
   const [legError, setLegError] = useState<string | null>(null);
   const [isBuilding, setIsBuilding] = useState(false);
-  const { writeContractAsync, isPending, error } = useWriteContract();
+  const { writeContractAsync, isPending, error } = useAttributedWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash: submitted,
   });

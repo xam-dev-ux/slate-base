@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import type { Address } from "viem";
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { useAccount, useReadContract, useWaitForTransactionReceipt } from "wagmi";
+import { useAttributedWriteContract } from "@/lib/useAttributedWrite";
 import { slateFundAbi } from "@/lib/abis";
 
 /// Chainlink is the default and only source of truth for pricing unless the operator opts into
@@ -35,7 +36,7 @@ export function PricingModePanel({ fund, operator }: { fund: Address; operator?:
   const resolvedEnabled = enabledUnsupported ? false : enabled;
 
   const [submitted, setSubmitted] = useState<`0x${string}` | undefined>();
-  const { writeContractAsync, isPending } = useWriteContract();
+  const { writeContractAsync, isPending } = useAttributedWriteContract();
   const { isLoading: isConfirming } = useWaitForTransactionReceipt({
     hash: submitted,
     query: { enabled: Boolean(submitted) },

@@ -2,7 +2,8 @@
 
 import { useState, type MouseEvent, type SyntheticEvent } from "react";
 import { isAddress, type Address } from "viem";
-import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { useWaitForTransactionReceipt } from "wagmi";
+import { useAttributedWriteContract } from "@/lib/useAttributedWrite";
 import { erc20Abi } from "@/lib/abis";
 import { formatShares } from "@/lib/format";
 
@@ -19,7 +20,7 @@ export function TransferShareButton({
   const [to, setTo] = useState("");
   const [hash, setHash] = useState<`0x${string}` | undefined>();
 
-  const { writeContractAsync, isPending, error } = useWriteContract();
+  const { writeContractAsync, isPending, error } = useAttributedWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
   const validRecipient = isAddress(to);

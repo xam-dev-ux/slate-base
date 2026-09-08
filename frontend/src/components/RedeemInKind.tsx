@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import type { Address } from "viem";
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useAccount } from "wagmi";
+import { useReadContract, useWaitForTransactionReceipt, useAccount } from "wagmi";
+import { useAttributedWriteContract } from "@/lib/useAttributedWrite";
 import { erc20Abi, slateFundAbi } from "@/lib/abis";
 import { formatShares } from "@/lib/format";
 
@@ -22,7 +23,7 @@ export function RedeemInKindButton({
   const [open, setOpen] = useState(false);
   const [hash, setHash] = useState<`0x${string}` | undefined>();
   const [blockedExit, setBlockedExit] = useState(false);
-  const { writeContractAsync, isPending } = useWriteContract();
+  const { writeContractAsync, isPending } = useAttributedWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
